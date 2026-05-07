@@ -69,12 +69,55 @@ class JsonlStateStore:
         with path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
+    def compact_processed(self) -> int:
+        if not self.processed_path.exists():
+            return 0
+        before_size = self.processed_path.stat().st_size
+        records = list(self._processed_index.values())
+        with tempfile.NamedTemporaryFile("w", delete=False, dir=self.processed_path.parent, encoding="utf-8") as f:
+            for record in records:
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+            temp_path = f.name
+        os.replace(temp_path, self.processed_path)
+        after_size = self.processed_path.stat().st_size
+        removed = before_size - after_size
+        return removed
+
+    def compact_reply_history(self, max_records: int = 10000) -> int:
+        if not self.reply_history_path.exists():
+            return 0
+        before_size = self.reply_history_path.stat().st_size
+        records = []
+        with self.reply_history_path.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                records.append(line)
+        if len(records) <= max_records:
+            return 0
+        records = records[-max_records:]
+        with tempfile.NamedTemporaryFile("w", delete=False, dir=self.reply_history_path.parent, encoding="utf-8") as f:
+            for line in records:
+                f.write(line + "\n")
+            temp_path = f.name
+        os.replace(temp_path, self.reply_history_path)
+        after_size = self.reply_history_path.stat().st_size
+        removed = before_size - after_size
+        return removed
+
     def _atomic_json_write(self, path: Path, data: dict[str, Any]) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        with tempfile.NamedTemporaryFile("w", delete=False, dir=path.parent, encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-            temp_path = f.name
-        os.replace(temp_path, path)
+        temp_path = None
+        try:
+            with tempfile.NamedTemporaryFile("w", delete=False, dir=path.parent, encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+                temp_path = f.name
+            os.replace(temp_path, path)
+        except Exception:
+            if temp_path and os.path.exists(temp_path):
+                os.unlink(temp_path)
+            raise
 
 
 def utc_timestamp() -> int:

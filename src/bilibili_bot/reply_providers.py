@@ -74,6 +74,9 @@ class OpenCodeFallbackProvider:
 
     def generate(self, messages: list[dict[str, str]]) -> ReplyResult:
         user_prompt = "\n\n".join(part["content"] for part in messages)
+        user_prompt = user_prompt.replace("\x00", "")
+        if len(user_prompt) > 10000:
+            user_prompt = user_prompt[:10000]
         command = [
             self.provider_config.get("command", "opencode"),
             "run",
