@@ -46,6 +46,8 @@ class CommentEvent(Event):
     author_name: str = ""
     content_text: str = ""
     at_me: bool = False
+    video_title: str = ""
+    parent_content: str = ""
 
     @property
     def author_id(self) -> str:
@@ -71,6 +73,8 @@ class CommentEvent(Event):
             "author_name": self.author_name,
             "content_text": self.content_text,
             "at_me": self.at_me,
+            "video_title": self.video_title,
+            "parent_content": self.parent_content,
         })
         return data
 
@@ -82,6 +86,7 @@ class DMEvent(Event):
     dm_content: str = ""
     msg_type: int = 1
     msg_key: int = 0
+    recent_messages: list = field(default_factory=list)
 
     @property
     def author_id(self) -> str:
@@ -103,5 +108,6 @@ class DMEvent(Event):
             "content": self.dm_content,
             "msg_type": self.msg_type,
             "msg_key": self.msg_key,
+            "recent_count": len(self.recent_messages),
         })
         return data

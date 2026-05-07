@@ -33,10 +33,11 @@ class OwnVideoCommentSource(BaseSource):
         for video in videos[:self.video_page_size]:
             bvid = video.get("bvid", "")
             aid = video.get("aid", 0)
+            title = video.get("title", "")
             try:
                 comments = self._fetch_comments(client, aid)
                 for comment in comments[:self.comment_page_size]:
-                    event = self._normalize_comment(comment, str(aid), bvid)
+                    event = self._normalize_comment(comment, str(aid), bvid, title)
                     if event:
                         events.append(event)
             except Exception as e:
@@ -77,9 +78,15 @@ class OwnVideoCommentSource(BaseSource):
 
         return []
 
-    def _normalize_comment(self, reply: dict, aid: str, bvid: str) -> CommentEvent | None:
+    def _normalize_comment(self, reply: dict, aid: str, bvid: str, title: str = "") -> CommentEvent | None:
         member = reply.get("member", {})
         content = reply.get("content", {})
+
+        # 提取父评论内容（楼中楼上下文）
+        parent_content = ""
+        parent_reply = reply.get("parent_reply")
+        if parent_reply and isinstance(parent_reply, dict):
+            parent_content = parent_reply.get("content", {}).get("message", "")
 
         return CommentEvent(
             source_type="own_video",
@@ -95,4 +102,6 @@ class OwnVideoCommentSource(BaseSource):
             author_name=member.get("uname", ""),
             content_text=content.get("message", ""),
             at_me=False,
+            video_title=title,
+            parent_content=parent_content,
         )

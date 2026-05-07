@@ -86,6 +86,8 @@ class AIConfig(BaseModel):
     timeout_seconds: int = 25
     max_reply_chars: int = 100
     providers: dict[str, AIProviderConfig] = Field(default_factory=dict)
+    tools_enabled: bool = True
+    tool_max_iterations: int = 3
 
 
 class ReplyConfig(BaseModel):

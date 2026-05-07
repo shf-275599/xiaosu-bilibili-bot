@@ -54,8 +54,9 @@ class DMSource(BaseSource):
                 messages = self._fetch_messages(client, talker_id)
                 logger.debug("dm_messages_fetched", talker_id=talker_id, count=len(messages))
 
+                recent = _build_recent_history(messages, my_uid)
+
                 for msg in messages:
-                    # 跳过自己发送的消息 — 只回复对方的
                     sender_uid = msg.get("sender_uid", 0)
                     if str(sender_uid) == my_uid:
                         continue
@@ -67,6 +68,8 @@ class DMSource(BaseSource):
                     if self._should_skip(event):
                         logger.debug("dm_skip_keyword", event_key=event.event_key)
                         continue
+
+                    event.recent_messages = recent
 
                     logger.info(
                         "dm_event_found",
@@ -154,3 +157,22 @@ class DMSource(BaseSource):
             if keyword in event.content:
                 return True
         return False
+
+
+def _build_recent_history(messages: list[dict], my_uid: str) -> list[dict]:
+    recent = []
+    for msg in reversed(messages):
+        sender = str(msg.get("sender_uid", 0))
+        content_str = msg.get("content", "{}")
+        try:
+            import json
+            content_data = json.loads(content_str)
+            text = content_data.get("content", "")
+        except (json.JSONDecodeError, TypeError):
+            text = content_str
+        if text.strip():
+            recent.append({
+                "role": "bot" if sender == my_uid else "user",
+                "content": text,
+            })
+    return recent

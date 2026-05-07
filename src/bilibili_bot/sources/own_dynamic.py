@@ -88,9 +88,21 @@ class OwnDynamicCommentSource(BaseSource):
             major = dynamic_module.get("major", {})
             archive = major.get("archive", {})
             oid = str(archive.get("aid", dynamic_id))
+            video_title = archive.get("title", "")
+            dynamic_desc = ""
         else:
             business_type = "dynamic_draw"
             oid = dynamic_id
+            video_title = ""
+            modules = dynamic.get("modules", {})
+            dynamic_module = modules.get("module_dynamic", {})
+            desc = dynamic_module.get("desc", {})
+            dynamic_desc = desc.get("text", "")
+
+        parent_content = ""
+        parent_reply = reply.get("parent_reply")
+        if parent_reply and isinstance(parent_reply, dict):
+            parent_content = parent_reply.get("content", {}).get("message", "")
 
         return CommentEvent(
             source_type="own_dynamic",
@@ -106,4 +118,6 @@ class OwnDynamicCommentSource(BaseSource):
             author_name=member.get("uname", ""),
             content_text=content.get("message", ""),
             at_me=False,
+            video_title=video_title or dynamic_desc,
+            parent_content=parent_content,
         )

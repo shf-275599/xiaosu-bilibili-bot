@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import json
 import os
-from typing import Any
+from typing import Any, Callable
 
 import requests
 
@@ -10,6 +11,13 @@ from bilibili_bot.providers.base import BaseProvider, ReplyResult
 
 class OpenAICompatibleProvider(BaseProvider):
     def generate(self, messages: list[dict[str, str]]) -> ReplyResult:
+        return self._call_api(messages)
+
+    def _call_api(
+        self,
+        messages: list[dict[str, str]],
+        tools: list[dict[str, Any]] | None = None,
+    ) -> ReplyResult:
         api_key_env = self.provider_config.get("api_key_env", "")
         api_key = os.environ.get(api_key_env, "")
 
@@ -24,12 +32,16 @@ class OpenAICompatibleProvider(BaseProvider):
         base_url = self.provider_config.get("base_url", "").rstrip("/")
         model = self.provider_config.get("model", "")
 
-        payload = {
+        payload: dict[str, Any] = {
             "model": model,
             "messages": messages,
             "temperature": self.global_config.reply.temperature,
             "max_tokens": self.global_config.reply.max_tokens,
         }
+
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
 
         try:
             response = requests.post(
@@ -52,7 +64,19 @@ class OpenAICompatibleProvider(BaseProvider):
 
         try:
             data = response.json()
-            text = data["choices"][0]["message"]["content"].strip()
+            choice = data["choices"][0]
+            message = choice.get("message", {})
+
+            if message.get("tool_calls") and tools:
+                return ReplyResult(
+                    False,
+                    provider=self.name,
+                    error="TOOL_CALLS",
+                    retriable=False,
+                    raw={"tool_calls": message["tool_calls"]},
+                )
+
+            text = message.get("content", "").strip()
         except (KeyError, IndexError, ValueError, TypeError) as exc:
             return ReplyResult(
                 False,
@@ -72,3 +96,47 @@ class OpenAICompatibleProvider(BaseProvider):
             )
 
         return ReplyResult(True, text=text, provider=self.name, raw=data)
+
+    def generate_with_tools(
+        self,
+        messages: list[dict[str, str]],
+        tools: list[dict[str, Any]],
+        tool_executor: Callable[[str, dict[str, Any]], str],
+        max_iterations: int = 3,
+    ) -> ReplyResult:
+        current_messages = list(messages)
+
+        for _ in range(max_iterations):
+            result = self._call_api(current_messages, tools=tools)
+
+            if result.success:
+                return result
+
+            if result.error == "TOOL_CALLS" and result.raw:
+                tool_calls = result.raw["tool_calls"]
+                choice_message = {"role": "assistant", "tool_calls": tool_calls}
+                current_messages.append(choice_message)
+
+                for tc in tool_calls:
+                    fn_name = tc["function"]["name"]
+                    try:
+                        fn_args = json.loads(tc["function"]["arguments"])
+                    except json.JSONDecodeError:
+                        fn_args = {}
+                    tool_result = tool_executor(fn_name, fn_args)
+                    current_messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc["id"],
+                        "content": tool_result,
+                    })
+                continue
+
+            error_msg = result.error
+            return result
+
+        return ReplyResult(
+            False,
+            provider=self.name,
+            error=f"Tool calling 超过最大迭代次数 ({max_iterations})",
+            retriable=False,
+        )
