@@ -8,7 +8,6 @@
 - **私信自动回复** - 自动检测未读私信并生成 AI 回复
 - **AI 智能回复** - 支持 OpenAI-compatible API（Deepseek/GPT/Claude 等）+ 本地降级通道
 - **Cookie 自动刷新** - RSA-OAEP 加密 + refresh_csrf 完整链路
-- **QR 码自动登录** - 无 refresh_token 时自动启动 QR 码登录，扫码即可获取
 - **保守风控** - 随机延迟、来源熔断、全局熔断、小时/日回复上限
 - **历史去重** - 跨来源 `(business_type, oid, rpid)` 唯一键去重
 - **状态持久化** - JSONL 格式记录处理历史和回复日志
@@ -75,6 +74,8 @@ python3 src/bilibili_bot/bilibili-comment-bot.py
 3. 切换到 **Application** → **Local Storage** → `https://www.bilibili.com`
 4. 查找 `ac_time_value` 键，复制其值
 
+或者使用 B站 App 扫码登录获取（需额外工具）。
+
 ### 配置文件
 
 编辑 `config/bot-config.toml`：
@@ -136,7 +137,6 @@ bilibili-bot/
 │   ├── reply_prompt.py           # Prompt 构建
 │   ├── rate_control.py           # 风控熔断
 │   ├── cookie_refresh.py         # Cookie 刷新
-│   ├── qr_login.py               # QR 码登录
 │   ├── state_store.py            # 状态持久化
 │   └── bilibili_wbi.py           # WBI 签名
 ├── config/                    # 配置文件
