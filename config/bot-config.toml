@@ -57,7 +57,7 @@ max_reply_chars = 100
 [ai.providers.deepseek]
 type = "openai_compatible"
 base_url = "https://api.deepseek.com/v1"
-model = "deepseek-chat"
+model = "deepseek-v4-flash"
 api_key_env = "DEEPSEEK_API_KEY"
 
 [ai.providers.opencode-local]
