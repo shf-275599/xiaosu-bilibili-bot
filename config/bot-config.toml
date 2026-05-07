@@ -28,6 +28,18 @@ enabled = true
 dynamic_page_size = 5
 comment_page_size = 10
 
+[sources.dm]
+enabled = true
+poll_interval_seconds = 60
+max_reply_per_round = 5
+skip_keywords = ["广告", "推广", "加微信"]
+whitelist_mids = []
+
+[dm_reply]
+system_prompt = "你是一个友善的B站用户。请根据私信内容生成简短自然的中文回复，不超过100字。"
+temperature = 0.7
+max_tokens = 200
+
 [filters]
 skip_self = true
 skip_empty = true
