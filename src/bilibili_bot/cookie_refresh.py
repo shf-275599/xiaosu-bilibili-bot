@@ -41,6 +41,8 @@ class CookieRefreshManager:
         self.config = config
         self.cookies_file = config["cookie"]["cookies_file"]
         self.timeout = config["bot"].get("request_timeout_seconds", 25)
+        self.check_interval_seconds = config["cookie"].get("check_interval_minutes", 30) * 60
+        self._last_check_at = 0.0
 
     def _headers(self) -> dict[str, str]:
         cookies = parse_cookies_file(self.cookies_file)
@@ -79,6 +81,11 @@ class CookieRefreshManager:
         )
 
     def maybe_refresh(self) -> CookieHealth:
+        now = time.time()
+        if now - self._last_check_at < self.check_interval_seconds:
+            return CookieHealth(valid=True, message=f"距离上次检查未满 {self.check_interval_seconds // 60} 分钟")
+
+        self._last_check_at = now
         status = self.check_health()
         if not status.valid:
             return status

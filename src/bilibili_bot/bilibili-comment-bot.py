@@ -10,6 +10,7 @@ import sys
 import time
 
 from bot_config import DEFAULT_CONFIG_PATH, load_config, parse_cookies_file
+from content_safety import ContentSafetyChecker
 from cookie_refresh import CookieRefreshManager
 from comment_dedup import DedupService
 from comment_filters import should_skip_event
@@ -49,7 +50,7 @@ def run_msgfeed_once(config: dict, dry_run: bool = False) -> int:
     if config["sources"].get("own_dynamic", {}).get("enabled", False):
         source_factories.append(OwnDynamicCommentSource(config))
     providers = ReplyProviderManager(config)
-    rate_controller = RateController(config)
+    rate_controller = RateController(config, store)
     my_uid = parse_cookies_file(config["cookie"]["cookies_file"]).get("DedeUserID")
 
     cookie_status = cookie_manager.maybe_refresh()
@@ -71,8 +72,20 @@ def run_msgfeed_once(config: dict, dry_run: bool = False) -> int:
 
     LOGGER.info("开始执行一轮多来源扫描")
     events = []
+    state = store.load_state()
+    source_last_run = state.get("source_last_run", {})
+    now = time.time()
+
     for source in source_factories:
         source_name = source.__class__.__name__
+
+        source_config = config["sources"].get(source_name.replace("Source", "").lower(), {})
+        interval = source_config.get("poll_interval_seconds", config["bot"].get("poll_interval_seconds", 30))
+        last_run = source_last_run.get(source_name, 0)
+        if now - last_run < interval:
+            LOGGER.info("跳过来源 %s: 间隔未满 %s 秒", source_name, interval)
+            continue
+
         allowed, reason = rate_controller.can_run_source(source_name)
         if not allowed:
             LOGGER.warning("跳过来源 %s: %s", source_name, reason)
@@ -81,11 +94,15 @@ def run_msgfeed_once(config: dict, dry_run: bool = False) -> int:
             rate_controller.wait_for_request_slot()
             batch = source.fetch()
             rate_controller.record_source_success(source_name)
+            source_last_run[source_name] = now
             LOGGER.info("来源 %s 采集到 %s 条事件", source_name, len(batch))
             events.extend(batch)
         except Exception as exc:  # noqa: BLE001
             delay = rate_controller.record_source_failure(source_name)
             LOGGER.error("来源 %s 采集失败: %s；记录退避 %.2f 秒", source_name, exc, delay)
+
+    state["source_last_run"] = source_last_run
+    store.save_state(state)
     LOGGER.info("本轮总计采集到 %s 条事件", len(events))
     processed = 0
 
@@ -100,7 +117,7 @@ def run_msgfeed_once(config: dict, dry_run: bool = False) -> int:
             dedup.mark_seen(event, reason)
             continue
 
-        allowed, reason = rate_controller.can_send()
+        allowed, reason = rate_controller.can_send(user_id=event.author_mid, oid=event.oid)
         if not allowed:
             LOGGER.warning("暂停发送 %s: %s", event.event_key(), reason)
             dedup.mark_failed(event, reason)
@@ -115,6 +132,13 @@ def run_msgfeed_once(config: dict, dry_run: bool = False) -> int:
             rate_controller.record_failure(reply.retriable)
             continue
 
+        safety = ContentSafetyChecker(config.get("content_safety"))
+        check = safety.check(reply.text)
+        if not check.safe:
+            LOGGER.error("内容安全审查未通过 %s: %s [风险等级: %s]", event.event_key(), check.reason, check.risk_level)
+            dedup.mark_failed(event, f"内容安全审查: {check.reason}", reply.provider)
+            continue
+
         LOGGER.info("回复生成成功 [%s]: %s", reply.provider, reply.text)
         delay = rate_controller.wait_before_send()
         LOGGER.info("发送前随机等待 %.2f 秒", delay)
@@ -123,7 +147,7 @@ def run_msgfeed_once(config: dict, dry_run: bool = False) -> int:
             LOGGER.info("dry-run 模式，不实际发送: %s", event.event_key())
             dedup.mark_dry_run(event, reply.text, reply.provider)
             processed += 1
-            rate_controller.record_success()
+            rate_controller.record_success(user_id=event.author_mid, oid=event.oid)
             continue
 
         success, message, retriable = send_reply(event, reply.text, config)
@@ -131,7 +155,7 @@ def run_msgfeed_once(config: dict, dry_run: bool = False) -> int:
             LOGGER.info("发送成功 %s", event.event_key())
             dedup.mark_replied(event, reply.text, reply.provider)
             processed += 1
-            rate_controller.record_success()
+            rate_controller.record_success(user_id=event.author_mid, oid=event.oid)
         else:
             LOGGER.error("发送失败 %s: %s", event.event_key(), message)
             dedup.mark_failed(event, message, reply.provider)
@@ -160,7 +184,7 @@ def run_dm_once(config: dict, dry_run: bool = False) -> int:
     store = JsonlStateStore()
     dedup = DMDedupService(store)
     providers = ReplyProviderManager(config)
-    rate_controller = RateController(config)
+    rate_controller = RateController(config, store)
 
     dm_source = DMSource(config)
     max_reply = dm_config.get("max_reply_per_round", 5)
@@ -199,7 +223,7 @@ def run_dm_once(config: dict, dry_run: bool = False) -> int:
         if skip:
             continue
 
-        allowed, reason = rate_controller.can_send()
+        allowed, reason = rate_controller.can_send(user_id=str(event.talker_id))
         if not allowed:
             LOGGER.warning("暂停私信发送 %s: %s", event.event_key(), reason)
             dedup.mark_failed(event, reason)
@@ -214,6 +238,13 @@ def run_dm_once(config: dict, dry_run: bool = False) -> int:
             rate_controller.record_failure(reply.retriable)
             continue
 
+        safety = ContentSafetyChecker(config.get("content_safety"))
+        check = safety.check(reply.text)
+        if not check.safe:
+            LOGGER.error("私信内容安全审查未通过 %s: %s [风险等级: %s]", event.event_key(), check.reason, check.risk_level)
+            dedup.mark_failed(event, f"内容安全审查: {check.reason}", reply.provider)
+            continue
+
         LOGGER.info("私信回复生成成功 [%s]: %s", reply.provider, reply.text)
         delay = rate_controller.wait_before_send()
         LOGGER.info("发送前随机等待 %.2f 秒", delay)
@@ -222,7 +253,7 @@ def run_dm_once(config: dict, dry_run: bool = False) -> int:
             LOGGER.info("dry-run 模式，不实际发送私信: %s", event.event_key())
             dedup.mark_dry_run(event, reply.text, reply.provider)
             processed += 1
-            rate_controller.record_success()
+            rate_controller.record_success(user_id=str(event.talker_id))
             continue
 
         result = send_dm(event.talker_id, reply.text, config)
@@ -230,7 +261,7 @@ def run_dm_once(config: dict, dry_run: bool = False) -> int:
             LOGGER.info("私信发送成功 %s", event.event_key())
             dedup.mark_replied(event, reply.text, reply.provider)
             processed += 1
-            rate_controller.record_success()
+            rate_controller.record_success(user_id=str(event.talker_id))
         else:
             LOGGER.error("私信发送失败 %s: %s", event.event_key(), result.message)
             dedup.mark_failed(event, result.message, reply.provider)
