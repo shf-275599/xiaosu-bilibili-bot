@@ -127,15 +127,28 @@ def run_once(config: BotConfig, dry_run: bool = False) -> None:
 
     if config.sources.dm.enabled:
         dm_source = DMSource(config)
-        try:
-            dm_events = dm_source.fetch_new_messages()
-            logger.info("dm_fetched", count=len(dm_events))
+        dm_interval = config.sources.dm.poll_interval_seconds
+        dm_last_run = source_last_run.get("DMSource", 0)
 
-            for event in dm_events:
-                dm_pipeline.run(event, context)
+        if now - dm_last_run >= dm_interval:
+            allowed, reason = rate_limiter.can_run_source("DMSource")
+            if allowed:
+                try:
+                    dm_events = dm_source.fetch_new_messages()
+                    rate_limiter.record_source_success("DMSource")
+                    source_last_run["DMSource"] = now
+                    logger.info("dm_fetched", count=len(dm_events))
 
-        except Exception as e:
-            logger.error("dm_failed", error=str(e))
+                    for event in dm_events:
+                        dm_pipeline.run(event, context)
+
+                except Exception as e:
+                    delay = rate_limiter.record_source_failure("DMSource")
+                    logger.error("dm_failed", error=str(e), retry_delay=delay)
+            else:
+                logger.warning("skip_source", source="DMSource", reason=reason)
+        else:
+            logger.debug("skip_source", source="DMSource", reason="interval_not_reached")
 
     state["source_last_run"] = source_last_run
     store.save_state(state)

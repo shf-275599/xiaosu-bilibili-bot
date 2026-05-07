@@ -24,10 +24,15 @@ class DMSource(BaseSource):
 
         my_uid = client.get_cookies().get("DedeUserID", "")
         if not my_uid:
-            logger.error("no_deduid")
+            logger.error("dm_no_deduid")
             return []
 
         sessions = self._fetch_sessions(client)
+        if not sessions:
+            logger.debug("dm_no_sessions")
+            return []
+
+        logger.debug("dm_sessions_fetched", count=len(sessions))
         events = []
 
         for session in sessions:
@@ -37,21 +42,45 @@ class DMSource(BaseSource):
             talker_id = session.get("talker_id", 0)
             unread_count = session.get("unread_count", 0)
 
-            if unread_count == 0 or str(talker_id) == my_uid:
+            if unread_count == 0:
+                logger.debug("dm_skip_no_unread", talker_id=talker_id)
+                continue
+
+            if str(talker_id) == my_uid:
+                logger.debug("dm_skip_self_session", talker_id=talker_id)
                 continue
 
             try:
                 messages = self._fetch_messages(client, talker_id)
+                logger.debug("dm_messages_fetched", talker_id=talker_id, count=len(messages))
+
                 for msg in messages:
-                    event = self._normalize_message(msg, session)
-                    if event:
-                        if self._should_skip(event):
-                            continue
-                        events.append(event)
-                        break
+                    # 跳过自己发送的消息 — 只回复对方的
+                    sender_uid = msg.get("sender_uid", 0)
+                    if str(sender_uid) == my_uid:
+                        continue
+
+                    event = self._normalize_message(msg, session, my_uid)
+                    if event is None:
+                        continue
+
+                    if self._should_skip(event):
+                        logger.debug("dm_skip_keyword", event_key=event.event_key)
+                        continue
+
+                    logger.info(
+                        "dm_event_found",
+                        event_key=event.event_key,
+                        talker_id=event.talker_id,
+                        content=event.content[:50],
+                    )
+                    events.append(event)
+                    break
+
             except Exception as e:
                 logger.warning("dm_fetch_failed", talker_id=talker_id, error=str(e))
 
+        logger.info("dm_events_total", count=len(events))
         return events
 
     def _fetch_sessions(self, client) -> list[dict]:
@@ -63,6 +92,7 @@ class DMSource(BaseSource):
         data = resp.json()
 
         if data.get("code") != 0:
+            logger.warning("dm_sessions_api_error", code=data.get("code"), message=data.get("message", ""))
             return []
 
         return data.get("data", {}).get("session_list", [])
@@ -76,11 +106,19 @@ class DMSource(BaseSource):
         data = resp.json()
 
         if data.get("code") != 0:
+            logger.warning("dm_messages_api_error", talker_id=talker_id, code=data.get("code"), message=data.get("message", ""))
             return []
 
         return data.get("data", {}).get("messages", []) or []
 
-    def _normalize_message(self, msg: dict, session: dict) -> DMEvent | None:
+    def _normalize_message(self, msg: dict, session: dict, my_uid: str) -> DMEvent | None:
+        """将私信消息规范化为 DMEvent。
+
+        关键设计：
+        - talker_id 使用 session 中的 talker_id（对话对方），而不是 sender_uid（消息发送者）
+        - 这样无论谁发了消息，reply 目标都是对话对方
+        - 由调用方负责过滤 sender_uid == my_uid 的自发自消息
+        """
         msg_type = msg.get("msg_type", 0)
         if msg_type != 1:
             return None
@@ -90,15 +128,21 @@ class DMSource(BaseSource):
             import json
             content_data = json.loads(content_str)
             text = content_data.get("content", "")
-        except:
+        except (json.JSONDecodeError, TypeError):
             text = content_str
+
+        if not text.strip():
+            return None
+
+        # 使用 session 的 talker_id 而不是 sender_uid
+        session_talker_id = session.get("talker_id", 0)
 
         return DMEvent(
             source_type="dm",
             event_key=f"dm:{msg.get('sender_uid')}:{msg.get('msg_key')}",
             created_at=msg.get("timestamp", 0),
             raw_payload=msg,
-            talker_id=msg.get("sender_uid", 0),
+            talker_id=session_talker_id,
             talker_name=session.get("account_info", {}).get("name", ""),
             dm_content=text,
             msg_type=msg_type,

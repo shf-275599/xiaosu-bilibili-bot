@@ -49,22 +49,37 @@ def send_comment_reply(event: CommentEvent, reply_text: str, client) -> tuple[bo
 
 def send_dm_reply(event: DMEvent, reply_text: str, client) -> tuple[bool, str, bool]:
     csrf = client.get_cookies().get("bili_jct", "")
+    sender_uid = client.get_cookies().get("DedeUserID", "")
+    receiver_id = event.talker_id
 
     import json as json_lib
     data = {
-        "msg[sender_uid]": client.get_cookies().get("DedeUserID", ""),
-        "msg[receiver_id]": event.talker_id,
+        "msg[sender_uid]": sender_uid,
+        "msg[receiver_id]": receiver_id,
+        "msg[receiver_type]": 1,
         "msg[msg_type]": 1,
+        "msg[msg_status]": 0,
         "msg[content]": json_lib.dumps({"content": reply_text}),
         "msg[dev_id]": "B0CB5998-CE3C-4069-8B15-5C4F5B7A3A3D",
+        "msg[new_face_version]": 0,
         "msg[timestamp]": int(time.time()),
+        "from_firework": 0,
+        "build": 0,
+        "mobi_app": "web",
         "csrf_token": csrf,
         "csrf": csrf,
     }
 
+    # WBI 签名必需（bilibili-api #828: 无签名时 API 返回 code=0 但消息不送达）
+    query_params = client.sign_wbi({
+        "w_sender_uid": sender_uid,
+        "w_receiver_id": receiver_id,
+    })
+
     try:
         resp = client.post(
             "https://api.vc.bilibili.com/web_im/v1/web_im/send_msg",
+            params=query_params,
             data=data,
         )
         resp.raise_for_status()

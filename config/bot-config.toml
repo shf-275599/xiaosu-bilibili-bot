@@ -1,6 +1,6 @@
 [bot]
 enabled = true
-poll_interval_seconds = 30
+poll_interval_seconds = 10
 run_mode = "daemon"
 conservative_mode = true
 log_level = "INFO"
@@ -9,7 +9,7 @@ source_failure_cooldown_seconds = 180
 
 [sources.msgfeed]
 enabled = true
-poll_interval_seconds = 20
+poll_interval_seconds = 10
 page_size = 10
 
 [sources.mention]
@@ -30,7 +30,7 @@ comment_page_size = 10
 
 [sources.dm]
 enabled = true
-poll_interval_seconds = 60
+poll_interval_seconds = 10
 max_reply_per_round = 5
 skip_keywords = ["广告", "推广", "加微信"]
 whitelist_mids = []
@@ -73,9 +73,9 @@ prefix = ""
 mention_style = "friendly"
 
 [rate_limit]
-min_request_interval_seconds = 3
-reply_delay_min_seconds = 3
-reply_delay_max_seconds = 8
+min_request_interval_seconds = 1
+reply_delay_min_seconds = 1
+reply_delay_max_seconds = 3
 max_retries = 3
 backoff_base_seconds = 10
 circuit_breaker_failures = 5
