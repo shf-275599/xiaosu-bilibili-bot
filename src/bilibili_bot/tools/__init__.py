@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import subprocess
 import json
-import tempfile
-import os
+import time
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +19,12 @@ WHISPER_MODEL = (
     "models--Systran--faster-whisper-base/"
     "snapshots/ebe41f70d5b6dfa9166e2c581c45c9c0cfc57b66"
 )
+
+TRANSCRIBE_COOLDOWN = 300
+MAX_CACHE_SIZE = 50
+
+_last_transcribe_at: float = 0
+_transcript_cache: dict[str, str] = {}
 
 TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
@@ -114,14 +119,35 @@ def _try_ai_summary(bvid: str) -> str:
 
 
 def _try_whisper_transcript(bvid: str) -> str:
+    global _last_transcribe_at, _transcript_cache
+
+    if bvid in _transcript_cache:
+        logger.info("transcript_cache_hit", bvid=bvid)
+        return _transcript_cache[bvid]
+
+    now = time.time()
+    if _last_transcribe_at > 0 and now - _last_transcribe_at < TRANSCRIBE_COOLDOWN:
+        remaining = int(TRANSCRIBE_COOLDOWN - (now - _last_transcribe_at))
+        logger.info("transcribe_cooldown", bvid=bvid, remaining=remaining)
+        return f"语音转录冷却中（{remaining}秒后可重试）。请稍后再问。"
+
+    _last_transcribe_at = now
+
     try:
         from bilibili_bot.tools.transcribe import transcribe_video
-        return transcribe_video(bvid, WHISPER_MODEL, COOKIES_FILE)
+        result = transcribe_video(bvid, WHISPER_MODEL, COOKIES_FILE)
     except ImportError:
         return "语音转录模块不可用"
     except Exception as e:
         logger.warning("whisper_transcript_error", bvid=bvid, error=str(e))
         return f"语音转录失败: {e}"
+
+    if result:
+        _transcript_cache[bvid] = result
+        if len(_transcript_cache) > MAX_CACHE_SIZE:
+            _transcript_cache.pop(next(iter(_transcript_cache)))
+
+    return result
 
 
 def _search_web(query: str) -> str:
