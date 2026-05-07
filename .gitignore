@@ -44,3 +44,4 @@ config/bilibili-cookies.txt
 
 # Logs
 *.log
+models/

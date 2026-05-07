@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import subprocess
 import json
+import tempfile
+import os
 from pathlib import Path
 from typing import Any
 
@@ -13,33 +15,20 @@ logger = structlog.get_logger()
 
 SCRIPTS_DIR = Path("/home/shf/.config/opencode/scripts/bilibili scripts")
 COOKIES_FILE = "/home/shf/bilibili-bot/config/bilibili-cookies.txt"
+WHISPER_MODEL = (
+    "/home/shf/bilibili-bot/models/whisper/"
+    "models--Systran--faster-whisper-base/"
+    "snapshots/ebe41f70d5b6dfa9166e2c581c45c9c0cfc57b66"
+)
 
 TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
-            "name": "get_video_summary",
+            "name": "get_video_content",
             "description": (
-                "获取B站视频的AI摘要。当用户询问'这个视频讲了什么'、"
-                "'视频内容总结'或需要了解视频内容时调用。需要提供BV号。"
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "bvid": {"type": "string", "description": "视频的BV号，如 BV1xx411c7mD"}
-                },
-                "required": ["bvid"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_video_transcript",
-            "description": (
-                "获取B站视频的Whisper语音转录文本。当用户询问'字幕'、"
-                "'完整内容'或需要视频文字稿时调用。需要提供BV号。"
-                "注意：此操作较慢（30-120秒），适用于长视频转录场景。"
+                "获取B站视频的内容总结。先尝试AI摘要，不可用时自动降级为语音转录。"
+                "当用户询问'这个视频讲了什么'、'视频内容'或需要了解视频时调用。"
             ),
             "parameters": {
                 "type": "object",
@@ -73,10 +62,8 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
 def execute_tool(name: str, arguments: dict[str, Any]) -> str:
     """执行工具并返回结果字符串。"""
     try:
-        if name == "get_video_summary":
-            return _get_video_summary(arguments.get("bvid", ""))
-        elif name == "get_video_transcript":
-            return _get_video_transcript(arguments.get("bvid", ""))
+        if name == "get_video_content":
+            return _get_video_content(arguments.get("bvid", ""))
         elif name == "search_web":
             return _search_web(arguments.get("query", ""))
         else:
@@ -86,56 +73,62 @@ def execute_tool(name: str, arguments: dict[str, Any]) -> str:
         return f"工具执行失败: {e}"
 
 
-def _get_video_summary(bvid: str) -> str:
+def _get_video_content(bvid: str) -> str:
+    """摘要优先 → 不可用则 Whisper 转录降级。"""
     if not bvid:
         return "错误：未提供 BV 号"
 
+    summary = _try_ai_summary(bvid)
+    if summary and "不可用" not in summary and "失败" not in summary and "错误" not in summary:
+        return f"【AI 摘要】{summary}"
+
+    logger.info("summary_unavailable_fallback_transcript", bvid=bvid)
+    transcript = _try_whisper_transcript(bvid)
+    if transcript:
+        return f"【语音转录】（AI摘要不可用，已自动使用语音识别）\n{transcript}"
+
+    return f"无法获取视频 {bvid} 的内容：AI 摘要和语音转录均不可用。"
+
+
+def _try_ai_summary(bvid: str) -> str:
     script = SCRIPTS_DIR / "bilibili_wbi.py"
     if not script.exists():
-        return f"错误：找不到摘要脚本 {script}"
+        return ""
 
     try:
         result = subprocess.run(
             ["python3", str(script), bvid, COOKIES_FILE],
             capture_output=True, text=True, timeout=60,
         )
-        if result.returncode != 0:
-            return f"获取视频摘要失败: {result.stderr[:500]}"
-        return result.stdout[:3000]
+        if result.returncode == 0 and result.stdout.strip():
+            text = result.stdout.strip()
+            if text and len(text) > 20:
+                return text[:3000]
+        return ""
     except subprocess.TimeoutExpired:
-        return "获取视频摘要超时（60秒）"
+        logger.warning("ai_summary_timeout", bvid=bvid)
+        return ""
     except Exception as e:
-        return f"获取视频摘要异常: {e}"
+        logger.warning("ai_summary_error", bvid=bvid, error=str(e))
+        return ""
 
 
-def _get_video_transcript(bvid: str) -> str:
-    if not bvid:
-        return "错误：未提供 BV 号"
-
-    script = SCRIPTS_DIR / "bilibili-whisper-transcribe.sh"
-    if not script.exists():
-        return f"错误：找不到转录脚本 {script}"
-
+def _try_whisper_transcript(bvid: str) -> str:
     try:
-        result = subprocess.run(
-            ["bash", str(script), f"https://www.bilibili.com/video/{bvid}", COOKIES_FILE, "auto"],
-            capture_output=True, text=True, timeout=180,
-        )
-        if result.returncode != 0:
-            return f"获取视频转录失败: {result.stderr[:500]}"
-        return result.stdout[:5000]
-    except subprocess.TimeoutExpired:
-        return "获取视频转录超时（180秒）"
+        from bilibili_bot.tools.transcribe import transcribe_video
+        return transcribe_video(bvid, WHISPER_MODEL, COOKIES_FILE)
+    except ImportError:
+        return "语音转录模块不可用"
     except Exception as e:
-        return f"获取视频转录异常: {e}"
+        logger.warning("whisper_transcript_error", bvid=bvid, error=str(e))
+        return f"语音转录失败: {e}"
 
 
 def _search_web(query: str) -> str:
     if not query:
         return "错误：未提供搜索关键词"
-
     try:
         from bilibili_bot.tools.web_search import web_search
         return web_search(query)
     except ImportError:
-        return "搜索功能不可用: 缺少 web_search 模块"
+        return "搜索功能不可用"

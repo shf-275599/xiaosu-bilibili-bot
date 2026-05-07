@@ -16,6 +16,8 @@ def build_comment_messages(event: CommentEvent, config) -> list[dict[str, str]]:
 
     if event.video_title:
         parts.append(f"内容标题：{event.video_title}")
+    if event.bvid:
+        parts.append(f"视频BV号：{event.bvid}")
 
     if event.parent_content:
         parts.append(f"被回复的评论：{event.parent_content}")

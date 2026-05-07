@@ -104,4 +104,5 @@ class OwnVideoCommentSource(BaseSource):
             at_me=False,
             video_title=title,
             parent_content=parent_content,
+            bvid=bvid,
         )

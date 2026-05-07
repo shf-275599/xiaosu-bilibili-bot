@@ -48,6 +48,7 @@ class CommentEvent(Event):
     at_me: bool = False
     video_title: str = ""
     parent_content: str = ""
+    bvid: str = ""
 
     @property
     def author_id(self) -> str:
@@ -75,6 +76,7 @@ class CommentEvent(Event):
             "at_me": self.at_me,
             "video_title": self.video_title,
             "parent_content": self.parent_content,
+            "bvid": self.bvid,
         })
         return data
 
