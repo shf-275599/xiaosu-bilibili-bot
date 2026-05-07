@@ -15,6 +15,10 @@ from comment_dedup import DedupService
 from comment_filters import should_skip_event
 from comment_sender import send_reply
 from comment_sources import MsgFeedReplySource, MentionMsgFeedSource, OwnDynamicCommentSource, OwnVideoCommentSource
+from dm_source import DMSource
+from dm_sender import send_dm
+from dm_dedup import DMDedupService
+from dm_prompt import build_dm_messages
 from rate_control import RateController
 from reply_prompt import build_messages
 from reply_providers import ReplyProviderManager
@@ -148,6 +152,93 @@ def run_msgfeed_once(config: dict, dry_run: bool = False) -> int:
     return processed
 
 
+def run_dm_once(config: dict, dry_run: bool = False) -> int:
+    dm_config = config.get("sources", {}).get("dm", {})
+    if not dm_config.get("enabled", False):
+        return 0
+
+    store = JsonlStateStore()
+    dedup = DMDedupService(store)
+    providers = ReplyProviderManager(config)
+    rate_controller = RateController(config)
+
+    dm_source = DMSource(config)
+    max_reply = dm_config.get("max_reply_per_round", 5)
+    skip_keywords = dm_config.get("skip_keywords", [])
+    whitelist_mids = dm_config.get("whitelist_mids", [])
+
+    try:
+        events = dm_source.fetch_new_messages()
+        LOGGER.info("私信轮询采集到 %s 条新消息", len(events))
+    except Exception as exc:
+        LOGGER.error("私信采集失败: %s", exc)
+        return 0
+
+    processed = 0
+    for event in events:
+        if processed >= max_reply:
+            LOGGER.info("本轮私信回复已达上限 %s", max_reply)
+            break
+
+        if dedup.already_handled(event, include_dry_run=dry_run):
+            LOGGER.info("跳过已处理私信: %s", event.event_key())
+            continue
+
+        if whitelist_mids and event.talker_id not in whitelist_mids:
+            LOGGER.info("跳过非白名单用户: %s (%s)", event.talker_name, event.talker_id)
+            dedup.mark_seen(event, "非白名单用户")
+            continue
+
+        skip = False
+        for keyword in skip_keywords:
+            if keyword in event.content:
+                LOGGER.info("跳过含关键词私信: %s", event.event_key())
+                dedup.mark_seen(event, f"含关键词: {keyword}")
+                skip = True
+                break
+        if skip:
+            continue
+
+        allowed, reason = rate_controller.can_send()
+        if not allowed:
+            LOGGER.warning("暂停私信发送 %s: %s", event.event_key(), reason)
+            dedup.mark_failed(event, reason)
+            continue
+
+        rate_controller.wait_for_request_slot()
+        messages = build_dm_messages(event, config)
+        reply = providers.generate_reply(messages)
+        if not reply.success:
+            LOGGER.error("私信回复生成失败 %s: %s", event.event_key(), reply.error)
+            dedup.mark_failed(event, reply.error, reply.provider)
+            rate_controller.record_failure(reply.retriable)
+            continue
+
+        LOGGER.info("私信回复生成成功 [%s]: %s", reply.provider, reply.text)
+        delay = rate_controller.wait_before_send()
+        LOGGER.info("发送前随机等待 %.2f 秒", delay)
+
+        if dry_run:
+            LOGGER.info("dry-run 模式，不实际发送私信: %s", event.event_key())
+            dedup.mark_dry_run(event, reply.text, reply.provider)
+            processed += 1
+            rate_controller.record_success()
+            continue
+
+        result = send_dm(event.talker_id, reply.text, config)
+        if result.success:
+            LOGGER.info("私信发送成功 %s", event.event_key())
+            dedup.mark_replied(event, reply.text, reply.provider)
+            processed += 1
+            rate_controller.record_success()
+        else:
+            LOGGER.error("私信发送失败 %s: %s", event.event_key(), result.message)
+            dedup.mark_failed(event, result.message, reply.provider)
+            rate_controller.record_failure(result.retriable)
+
+    return processed
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Bilibili 评论自动回复机器人 Phase 1")
     parser.add_argument("--config", default=str(DEFAULT_CONFIG_PATH), help="配置文件路径")
@@ -172,6 +263,7 @@ def main() -> int:
     if args.once:
         try:
             run_msgfeed_once(config, dry_run=args.dry_run)
+            run_dm_once(config, dry_run=args.dry_run)
             return 0
         except Exception as exc:  # noqa: BLE001
             LOGGER.error("单轮执行失败: %s", exc)
@@ -182,6 +274,7 @@ def main() -> int:
     while True:
         try:
             run_msgfeed_once(config, dry_run=args.dry_run)
+            run_dm_once(config, dry_run=args.dry_run)
         except Exception as exc:  # noqa: BLE001
             LOGGER.exception("守护循环异常: %s", exc)
         time.sleep(interval)

@@ -140,6 +140,13 @@ def default_config() -> dict[str, Any]:
                 "dynamic_page_size": 5,
                 "comment_page_size": 10,
             },
+            "dm": {
+                "enabled": False,
+                "poll_interval_seconds": 60,
+                "max_reply_per_round": 5,
+                "skip_keywords": ["广告", "推广", "加微信"],
+                "whitelist_mids": [],
+            },
         },
         "filters": {
             "skip_self": True,
@@ -174,6 +181,11 @@ def default_config() -> dict[str, Any]:
             "max_tokens": 200,
             "prefix": "",
             "mention_style": "friendly",
+        },
+        "dm_reply": {
+            "system_prompt": "你是一个友善的B站用户。请根据私信内容生成简短自然的中文回复，避免机械、避免重复，不超过100字。",
+            "temperature": 0.7,
+            "max_tokens": 200,
         },
         "rate_limit": {
             "min_request_interval_seconds": 3,
