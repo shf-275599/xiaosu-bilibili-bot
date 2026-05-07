@@ -84,17 +84,23 @@ def run_once(config: BotConfig, dry_run: bool = False) -> None:
     now = time.time()
 
     sources = []
+    source_intervals = {}
+
     if config.sources.msgfeed.enabled:
         sources.append(("MsgFeedReplySource", MsgFeedReplySource(config)))
+        source_intervals["MsgFeedReplySource"] = config.sources.msgfeed.poll_interval_seconds
     if config.sources.mention.enabled:
         sources.append(("MentionMsgFeedSource", MentionMsgFeedSource(config)))
+        source_intervals["MentionMsgFeedSource"] = config.sources.mention.poll_interval_seconds
     if config.sources.own_video.enabled:
         sources.append(("OwnVideoCommentSource", OwnVideoCommentSource(config)))
+        source_intervals["OwnVideoCommentSource"] = config.sources.own_video.poll_interval_seconds
     if config.sources.own_dynamic.enabled:
         sources.append(("OwnDynamicCommentSource", OwnDynamicCommentSource(config)))
+        source_intervals["OwnDynamicCommentSource"] = config.sources.own_dynamic.poll_interval_seconds
 
     for source_name, source in sources:
-        interval = getattr(config.sources, source_name.replace("Source", "").lower()).poll_interval_seconds
+        interval = source_intervals.get(source_name, config.bot.poll_interval_seconds)
         last_run = source_last_run.get(source_name, 0)
 
         if now - last_run < interval:

@@ -27,11 +27,13 @@ class MsgFeedConfig(BaseModel):
 
 class MentionConfig(BaseModel):
     enabled: bool = True
+    poll_interval_seconds: int = 30
     page_size: int = 10
 
 
 class OwnVideoConfig(BaseModel):
     enabled: bool = True
+    poll_interval_seconds: int = 30
     video_page_size: int = 5
     comment_page_size: int = 10
     max_retries: int = 2
@@ -40,6 +42,7 @@ class OwnVideoConfig(BaseModel):
 
 class OwnDynamicConfig(BaseModel):
     enabled: bool = True
+    poll_interval_seconds: int = 30
     dynamic_page_size: int = 5
     comment_page_size: int = 10
 
