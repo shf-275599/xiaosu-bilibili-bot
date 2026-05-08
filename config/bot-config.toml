@@ -54,6 +54,7 @@ timeout_seconds = 25
 max_reply_chars = 100
 tools_enabled = true           # 启用 LLM Function Calling（视频摘要/转录/联网搜索）
 tool_max_iterations = 3       # 工具调用最大迭代次数
+search_quota_monthly = 30    # 每月搜索次数上限
 
 [ai.providers.deepseek]
 type = "openai_compatible"

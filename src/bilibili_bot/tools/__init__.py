@@ -155,6 +155,15 @@ def _search_web(query: str) -> str:
         return "错误：未提供搜索关键词"
     try:
         from bilibili_bot.tools.web_search import web_search
-        return web_search(query)
+        from bilibili_bot.config import BotConfig
+
+        limit = 30
+        try:
+            config = BotConfig.from_toml("config/bot-config.toml")
+            limit = config.ai.search_quota_monthly
+        except Exception:
+            pass
+
+        return web_search(query, monthly_limit=limit)
     except ImportError:
         return "搜索功能不可用"
