@@ -40,7 +40,7 @@ class MentionMsgFeedSource(MsgFeedReplySource):
                 logger.warning("normalize_failed", error=str(e))
 
         if events:
-            self._enrich_bvid(events, client)
+            self._enrich_events(events, client)
         return events
 
     def _normalize_item(self, item: dict) -> CommentEvent | None:

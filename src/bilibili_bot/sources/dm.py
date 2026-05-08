@@ -104,7 +104,7 @@ class DMSource(BaseSource):
     def _fetch_messages(self, client, talker_id: int) -> list[dict]:
         resp = client.get(
             "https://api.vc.bilibili.com/svr_sync/v1/svr_sync/fetch_session_msgs",
-            params={"talker_id": talker_id, "size": 10},
+            params={"talker_id": talker_id, "size": 20},
         )
         resp.raise_for_status()
         data = resp.json()

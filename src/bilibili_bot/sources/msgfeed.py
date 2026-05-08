@@ -39,23 +39,38 @@ class MsgFeedReplySource(BaseSource):
             except Exception as e:
                 logger.warning("normalize_failed", error=str(e))
 
-        self._enrich_bvid(events, client)
+        self._enrich_events(events, client)
         return events
 
-    def _enrich_bvid(self, events: list[CommentEvent], client) -> None:
-        """为 video 类型的 CommentEvent 补充 bvid（aid → bvid 转换）。"""
+    def _enrich_events(self, events: list[CommentEvent], client) -> None:
+        cache: dict[str, dict] = {}
         for event in events:
-            if event.business_type == "video" and event.oid and not event.bvid:
+            if event.business_type != "video" or not event.oid:
+                continue
+            need_bvid = not event.bvid
+            need_title = not event.video_title
+            if not need_bvid and not need_title:
+                continue
+
+            oid = event.oid
+            if oid not in cache:
                 try:
                     resp = client.get(
                         "https://api.bilibili.com/x/web-interface/view",
-                        params={"aid": event.oid},
+                        params={"aid": oid},
                     )
                     data = resp.json()
                     if data.get("code") == 0:
-                        event.bvid = data.get("data", {}).get("bvid", "")
+                        cache[oid] = data.get("data", {})
                 except Exception as e:
-                    logger.debug("bvid_enrich_failed", oid=event.oid, error=str(e))
+                    logger.debug("event_enrich_failed", oid=oid, error=str(e))
+
+            info = cache.get(oid, {})
+            if info:
+                if need_bvid:
+                    event.bvid = info.get("bvid", "")
+                if need_title:
+                    event.video_title = info.get("title", "")
 
     def _normalize_item(self, item: dict) -> CommentEvent | None:
         user = item.get("user", {})

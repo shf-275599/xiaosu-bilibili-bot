@@ -44,7 +44,7 @@ def build_dm_messages(event: DMEvent, config) -> list[dict[str, str]]:
     ]
 
     if event.recent_messages:
-        for hist in event.recent_messages[-5:]:
+        for hist in event.recent_messages[-10:]:
             messages.append({"role": "user" if hist["role"] == "user" else "assistant", "content": hist["content"]})
 
     messages.append({
