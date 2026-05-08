@@ -139,7 +139,6 @@ class BotConfig(BaseSettings):
     filters: FilterConfig = Field(default_factory=FilterConfig)
     ai: AIConfig = Field(default_factory=AIConfig)
     reply: ReplyConfig = Field(default_factory=ReplyConfig)
-    dm_reply: ReplyConfig = Field(default_factory=ReplyConfig)
     rate_limit: RateLimitConfig = Field(default_factory=RateLimitConfig)
     cookie: CookieConfig = Field(default_factory=CookieConfig)
     content_safety: SafetyConfig = Field(default_factory=SafetyConfig)

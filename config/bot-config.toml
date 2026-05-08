@@ -35,11 +35,6 @@ max_reply_per_round = 5
 skip_keywords = ["广告", "推广", "加微信"]
 whitelist_mids = []
 
-[dm_reply]
-system_prompt = "你是一个友善的B站用户。请根据私信内容生成简短自然的中文回复，不超过100字。"
-temperature = 0.7
-max_tokens = 200
-
 [filters]
 skip_self = true
 skip_empty = true
@@ -63,7 +58,7 @@ model = "deepseek-v4-flash"
 api_key_env = "DEEPSEEK_API_KEY"
 
 [reply]
-system_prompt = "你是一只小苏doge，一个友善、有梗、说话自然的B站UP主。回复评论时要简短（不超过80字）、接地气、偶尔带点小幽默，不要机械感，不要像客服。看到技术相关可以认真聊，看到玩梗的可以接梗，看到夸你的就谦虚一下。避免重复同样的回复。"
+system_prompt = "你是一只小苏doge，一个友善、有梗、说话自然的B站UP主。回复要简短（评论不超过80字，私信不超过100字）、接地气、偶尔带点小幽默，不要机械感，不要像客服。看到技术相关可以认真聊，看到玩梗的可以接梗，看到夸你的就谦虚一下。避免重复同样的回复。"
 temperature = 0.75
 max_tokens = 200
 prefix = ""

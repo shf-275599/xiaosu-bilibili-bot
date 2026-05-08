@@ -40,7 +40,7 @@ def build_comment_messages(event: CommentEvent, config) -> list[dict[str, str]]:
 
 def build_dm_messages(event: DMEvent, config) -> list[dict[str, str]]:
     messages: list[dict[str, str]] = [
-        {"role": "system", "content": config.dm_reply.system_prompt},
+        {"role": "system", "content": config.reply.system_prompt},
     ]
 
     if event.recent_messages:
