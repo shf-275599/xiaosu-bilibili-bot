@@ -5,8 +5,11 @@ import os
 from typing import Any, Callable
 
 import requests
+import structlog
 
 from bilibili_bot.providers.base import BaseProvider, ReplyResult
+
+logger = structlog.get_logger()
 
 
 class OpenAICompatibleProvider(BaseProvider):
@@ -135,7 +138,9 @@ class OpenAICompatibleProvider(BaseProvider):
                         fn_args = json.loads(tc["function"]["arguments"])
                     except json.JSONDecodeError:
                         fn_args = {}
+                    logger.info("tool_call_start", tool=fn_name, args=fn_args)
                     tool_result = tool_executor(fn_name, fn_args)
+                    logger.info("tool_call_end", tool=fn_name, result_preview=tool_result[:200] if tool_result else "")
                     current_messages.append({
                         "role": "tool",
                         "tool_call_id": tc["id"],

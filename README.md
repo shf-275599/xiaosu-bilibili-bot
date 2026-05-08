@@ -15,6 +15,7 @@
 - **保守风控** - 随机延迟、来源熔断、全局熔断、小时/日回复上限
 - **类型安全配置** - Pydantic v2 配置验证
 - **结构化日志** - structlog JSON 格式，便于监控
+- **工具调用日志** - 记录每次 Function Calling 的工具名称、参数和结果预览
 - **每日统计报告** - 定时向主人推送当日回复/工具调用/错误统计
 - **自动跳过** - 同一用户反复触发 fatal 错误时自动屏蔽，节省 API 调用
 - **多轮对话记忆** - 私信超 20 条时自动总结对话背景，保持上下文连贯
@@ -192,7 +193,7 @@ blacklist_mids = []                # 黑名单用户 UID 列表
 
 [reply]
 system_prompt_file = "config/system-prompt.txt"  # 从独立文件加载角色 Prompt
-temperature = 0.75                 # LLM 温度（0=确定性，1=创造性）
+temperature = 0.5                  # LLM 温度（0=确定性，1=创造性）
 max_tokens = 800                   # 最大生成 token 数
 
 [ai]
