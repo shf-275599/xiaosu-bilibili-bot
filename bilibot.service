@@ -11,6 +11,7 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=%h/bilibili-bot
 Environment=PYTHONPATH=%h/bilibili-bot/src
+Environment=PATH=%h/bilibili-bot/.venv/bin:/usr/local/bin:/usr/bin:/bin
 EnvironmentFile=%h/bilibili-bot/.env
 ExecStart=%h/bilibili-bot/.venv/bin/python3 -m bilibili_bot
 Restart=always
