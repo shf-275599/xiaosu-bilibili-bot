@@ -92,6 +92,7 @@ def _get_video_content(bvid: str) -> str:
     if transcript:
         return f"【语音转录】（AI摘要不可用，已自动使用语音识别）\n{transcript}"
 
+    logger.warning("video_content_all_failed", bvid=bvid)
     return f"无法获取视频 {bvid} 的内容：AI 摘要和语音转录均不可用。"
 
 

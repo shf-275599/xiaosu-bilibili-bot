@@ -5,6 +5,7 @@ from __future__ import annotations
 import subprocess
 import tempfile
 import os
+import time
 
 import structlog
 
@@ -26,7 +27,7 @@ def transcribe_video(bvid: str, model_path: str, cookies_file: str) -> str:
         audio_path = os.path.join(tmpdir, "audio.wav")
 
         try:
-            _download_audio(url, audio_path, cookies_file)
+            _download_audio(url, audio_path, cookies_file, max_retries=2)
         except Exception as e:
             logger.warning("transcribe_download_failed", bvid=bvid, error=str(e))
             return ""
@@ -59,7 +60,7 @@ def transcribe_video(bvid: str, model_path: str, cookies_file: str) -> str:
             return ""
 
 
-def _download_audio(url: str, output: str, cookies_file: str) -> None:
+def _download_audio(url: str, output: str, cookies_file: str, max_retries: int = 2) -> None:
     cmd = [
         "yt-dlp",
         "--cookies", cookies_file,
@@ -71,6 +72,15 @@ def _download_audio(url: str, output: str, cookies_file: str) -> None:
         "--no-playlist",
         url,
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-    if result.returncode != 0:
-        raise RuntimeError(f"yt-dlp 失败 (code={result.returncode}): {result.stderr[:300]}")
+
+    last_error = ""
+    for attempt in range(max_retries):
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=45)
+        if result.returncode == 0:
+            return
+        last_error = f"yt-dlp 失败 (code={result.returncode}): {result.stderr[:300]}"
+        logger.warning("yt-dlp_retry", attempt=attempt+1, max_retries=max_retries, error=last_error)
+        if attempt < max_retries - 1:
+            time.sleep(3)
+
+    raise RuntimeError(last_error)
