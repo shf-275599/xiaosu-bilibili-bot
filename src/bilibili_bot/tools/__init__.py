@@ -108,7 +108,7 @@ def _try_ai_summary(bvid: str) -> str:
         if result.returncode == 0 and result.stdout.strip():
             text = result.stdout.strip()
             if text and len(text) > 20:
-                return text[:3000]
+                return text[:5000]
         return ""
     except subprocess.TimeoutExpired:
         logger.warning("ai_summary_timeout", bvid=bvid)

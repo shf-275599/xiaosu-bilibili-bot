@@ -52,7 +52,7 @@ def transcribe_video(bvid: str, model_path: str, cookies_file: str) -> str:
                 return ""
 
             logger.info("transcribe_done", bvid=bvid, chars=len(transcript))
-            return transcript[:5000]
+            return transcript[:8000]
 
         except Exception as e:
             logger.warning("transcribe_error", bvid=bvid, error=str(e))
