@@ -82,7 +82,6 @@ class AIProviderConfig(BaseModel):
 
 class AIConfig(BaseModel):
     primary_provider: str = "deepseek"
-    fallback_provider: str = "opencode-local"
     timeout_seconds: int = 25
     max_reply_chars: int = 100
     providers: dict[str, AIProviderConfig] = Field(default_factory=dict)
