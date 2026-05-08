@@ -52,6 +52,7 @@ class DMSource(BaseSource):
 
             try:
                 messages = self._fetch_messages(client, talker_id)
+                messages = [m for m in messages if isinstance(m, dict)]
                 logger.debug("dm_messages_fetched", talker_id=talker_id, count=len(messages))
 
                 recent = _build_recent_history(messages, my_uid)
@@ -130,9 +131,12 @@ class DMSource(BaseSource):
         try:
             import json
             content_data = json.loads(content_str)
-            text = content_data.get("content", "")
-        except (json.JSONDecodeError, TypeError):
-            text = content_str
+            if isinstance(content_data, dict):
+                text = content_data.get("content", "")
+            else:
+                text = str(content_data)
+        except (json.JSONDecodeError, TypeError, AttributeError):
+            text = str(content_str)
 
         if not text.strip():
             return None
@@ -159,17 +163,22 @@ class DMSource(BaseSource):
         return False
 
 
-def _build_recent_history(messages: list[dict], my_uid: str) -> list[dict]:
+def _build_recent_history(messages: list, my_uid: str) -> list[dict]:
     recent = []
     for msg in reversed(messages):
+        if not isinstance(msg, dict):
+            continue
         sender = str(msg.get("sender_uid", 0))
         content_str = msg.get("content", "{}")
         try:
             import json
             content_data = json.loads(content_str)
-            text = content_data.get("content", "")
-        except (json.JSONDecodeError, TypeError):
-            text = content_str
+            if isinstance(content_data, dict):
+                text = content_data.get("content", "")
+            else:
+                text = str(content_data)
+        except (json.JSONDecodeError, TypeError, AttributeError):
+            text = str(content_str)
         if text.strip():
             recent.append({
                 "role": "bot" if sender == my_uid else "user",
