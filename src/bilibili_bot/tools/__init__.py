@@ -12,7 +12,7 @@ import structlog
 
 logger = structlog.get_logger()
 
-SCRIPTS_DIR = Path("/home/shf/.config/opencode/scripts/bilibili scripts")
+SCRIPTS_DIR = Path("/home/shf/bilibili-bot/scripts")
 COOKIES_FILE = "/home/shf/bilibili-bot/config/bilibili-cookies.txt"
 WHISPER_MODEL = (
     "/home/shf/bilibili-bot/models/whisper/"
