@@ -9,6 +9,7 @@
 - **AI 智能回复** - DeepSeek V4 Flash，支持 Function Calling（Tool Calling）
 - **上下文富化** - 自动携带视频标题、父评论内容、私信对话历史、BV号
 - **视频内容工具** - 用户 @bot 可获取视频 AI 摘要，不可用时自动降级为 Whisper 语音转录
+- **联网搜索** - DuckDuckGo 零配置搜索，用户问"今天有什么新闻"时自动查
 - **Cookie 自动刷新** - RSA-OAEP 加密 + refresh_csrf 完整链路
 - **DM 私信回复** - 监听私信，AI 生成回复并发送（含 WBI 签名）
 - **保守风控** - 随机延迟、来源熔断、全局熔断、小时/日回复上限
@@ -21,6 +22,7 @@
 
 ```bash
 pip install -e .
+pip install ddgs  # 联网搜索依赖
 ```
 
 ### 2. 配置
@@ -115,6 +117,8 @@ Bot 自动调用 `get_video_content` 工具：
 1. 先尝试 B站 AI 摘要（2-10s）
 2. 不可用时自动降级为 Whisper 语音转录（30-90s）
 3. 转录结果缓存，同一视频不重复转录
+
+**联网搜索**：在私信或评论中问 "今天有什么新闻"、"查一下XX"，Bot 自动调用 `search_web` 工具，通过 DuckDuckGo 搜索并返回结果摘要。
 
 ## 目录结构
 
