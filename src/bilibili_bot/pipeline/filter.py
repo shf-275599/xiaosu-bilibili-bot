@@ -43,6 +43,10 @@ class FilterStage(PipelineStage):
             logger.debug("skip_short", event_key=event.event_key, length=len(event.content_text))
             return StageResult.SKIP
 
+        if config.followed_only and not event.author_follower:
+            logger.debug("skip_not_follower", event_key=event.event_key, author_mid=event.author_mid)
+            return StageResult.SKIP
+
         if context.auto_skip and context.auto_skip.should_skip(event.author_mid, event.source_type):
             logger.info(
                 "skip_auto_skip",

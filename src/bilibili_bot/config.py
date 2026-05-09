@@ -71,6 +71,7 @@ class FilterConfig(BaseModel):
     skip_pure_emoji: bool = True
     min_meaningful_length: int = 2
     blacklist_mids: list[int] = Field(default_factory=list)
+    followed_only: bool = False
 
 
 class AIProviderConfig(BaseModel):

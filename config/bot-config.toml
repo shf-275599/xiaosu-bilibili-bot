@@ -44,6 +44,7 @@ skip_pure_emoji = true
 min_meaningful_length = 2
 blacklist_mids = []
 duplicate_window_minutes = 1440
+followed_only = false  # 设为 true 则只回复关注了 bot 的用户
 
 [ai]
 primary_provider = "deepseek" # 主 AI Provider（DeepSeek V4 Flash）

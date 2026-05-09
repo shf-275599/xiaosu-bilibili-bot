@@ -191,6 +191,7 @@ skip_empty = true                  # 跳过空评论
 skip_pure_emoji = true             # 跳过纯颜文字评论
 min_meaningful_length = 2          # 最短有意义的评论长度（中文字数）
 blacklist_mids = []                # 黑名单用户 UID 列表
+followed_only = false              # 设为 true 则只回复关注了 bot 的用户
 
 [reply]
 system_prompt_file = "config/system-prompt.txt"  # 从独立文件加载角色 Prompt
