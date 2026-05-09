@@ -12,13 +12,13 @@ import requests
 QUOTA_FILE = Path("data/search_quota.json")
 
 
-def web_search(query: str, num_results: int = 3, monthly_limit: int = 30) -> str:
+def web_search(query: str, num_results: int = 3, daily_limit: int = 30) -> str:
     if not query.strip():
         return "错误：未提供搜索关键词"
 
     api_key = os.environ.get("TAVILY_API_KEY", "")
 
-    if api_key and _check_quota(monthly_limit):
+    if api_key and _check_quota(daily_limit):
         result = _tavily_search(query, num_results, api_key)
         if result:
             return result
@@ -94,16 +94,16 @@ def _check_quota(limit: int) -> bool:
     if limit <= 0:
         return True
     current = _read_quota()
-    if current["month"] != _current_month():
+    if current["day"] != _current_day():
         return True
     return current["count"] < limit
 
 
 def _increment_quota() -> None:
     current = _read_quota()
-    month = _current_month()
-    if current["month"] != month:
-        current = {"month": month, "count": 0}
+    day = _current_day()
+    if current["day"] != day:
+        current = {"day": day, "count": 0}
     current["count"] += 1
 
     QUOTA_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -114,15 +114,15 @@ def _increment_quota() -> None:
 
 def _read_quota() -> dict:
     if not QUOTA_FILE.exists():
-        return {"month": _current_month(), "count": 0}
+        return {"day": _current_day(), "count": 0}
     try:
         data = json.loads(QUOTA_FILE.read_text(encoding="utf-8"))
-        if isinstance(data, dict) and "month" in data and "count" in data:
+        if isinstance(data, dict) and "day" in data and "count" in data:
             return data
     except (json.JSONDecodeError, OSError):
         pass
-    return {"month": _current_month(), "count": 0}
+    return {"day": _current_day(), "count": 0}
 
 
-def _current_month() -> str:
-    return time.strftime("%Y-%m")
+def _current_day() -> str:
+    return time.strftime("%Y-%m-%d")

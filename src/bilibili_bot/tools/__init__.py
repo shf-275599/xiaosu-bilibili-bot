@@ -161,7 +161,7 @@ def _search_web(query: str) -> str:
         limit = 30
         try:
             config = BotConfig.from_toml("config/bot-config.toml")
-            limit = config.ai.search_quota_monthly
+            limit = config.ai.search_quota_daily
         except Exception:
             pass
 

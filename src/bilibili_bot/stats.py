@@ -148,8 +148,8 @@ def _read_search_quota(store) -> tuple[int, int]:
         with quota_path.open("r", encoding="utf-8") as f:
             data = json.load(f)
 
-        current_month = datetime.now(CST).strftime("%Y-%m")
-        if data.get("month") != current_month:
+        current_day = datetime.now(CST).strftime("%Y-%m-%d")
+        if data.get("day") != current_day:
             return 0, default_total
 
         return data.get("count", 0), default_total

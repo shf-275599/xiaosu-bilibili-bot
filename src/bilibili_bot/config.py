@@ -89,7 +89,7 @@ class AIConfig(BaseModel):
     providers: dict[str, AIProviderConfig] = Field(default_factory=dict)
     tools_enabled: bool = True
     tool_max_iterations: int = 3
-    search_quota_monthly: int = 30
+    search_quota_daily: int = 30
 
 
 class ReplyConfig(BaseModel):
