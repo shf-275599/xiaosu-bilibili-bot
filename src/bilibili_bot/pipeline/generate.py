@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import structlog
+from datetime import datetime, timedelta, timezone
 
 from bilibili_bot.events import Event, CommentEvent, DMEvent
 from bilibili_bot.pipeline.base import PipelineStage, PipelineContext, StageResult
+
+CST = timezone(timedelta(hours=8))
 
 logger = structlog.get_logger()
 
@@ -27,7 +30,8 @@ def build_comment_messages(event: CommentEvent, config) -> list[dict[str, str]]:
     business_labels = {"video": "视频", "dynamic": "动态", "dynamic_draw": "图文动态"}
     business_label = business_labels.get(event.business_type, event.business_type)
 
-    parts = [f"来源：{business_label}"]
+    now = datetime.now(CST)
+    parts = [f"当前时间：{now.strftime('%Y年%m月%d日 %H:%M')}", f"来源：{business_label}"]
 
     if event.video_title:
         parts.append(f"内容标题：{event.video_title}")
@@ -67,9 +71,10 @@ def build_dm_messages(event: DMEvent, config) -> list[dict[str, str]]:
         for hist in event.recent_messages[-10:]:
             messages.append({"role": "user" if hist["role"] == "user" else "assistant", "content": hist["content"]})
 
+    now = datetime.now(CST)
     messages.append({
         "role": "user",
-        "content": f"用户 {event.talker_name} 发来最新私信：{event.content}",
+        "content": f"当前时间：{now.strftime('%Y年%m月%d日 %H:%M')}\n用户 {event.talker_name} 发来最新私信：{event.content}",
     })
 
     return messages
