@@ -386,7 +386,7 @@ class DMEvent(Event):
     talker_id: int          # 对话对方 UID
     talker_name: str        # 对方昵称
     dm_content: str         # 私信内容
-    recent_messages: list   # 最近对话历史（10条，每轮从40条中取最新10条）
+    recent_messages: list   # 最近对话历史（15条，每轮从60条中取最新15条）
 ```
 
 ### 上下文富化
