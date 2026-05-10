@@ -100,7 +100,7 @@ def generate_daily_report(store) -> str:
         f"─",
         f"API 调用估算: ~{api_estimate} 次",
         f"Token 估算: ~{token_estimate}",
-        f"搜索配额: 共{quota_total}，剩余{quota_total - quota_used}",
+        f"Tavily 搜索配额: 已用 {quota_used} / 共 {quota_total}，剩余 {quota_total - quota_used}",
         f"错误: {error_count} 次",
     ])
 
