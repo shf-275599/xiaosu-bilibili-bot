@@ -193,7 +193,7 @@ def _build_recent_history(messages: list, my_uid: str) -> tuple[list[dict], str 
             except Exception:
                 text = str(content_str)
 
-        if text.strip():
+        if text.strip() and not text.startswith("📊 今日报告"):
             recent.append({
                 "role": "bot" if sender == my_uid else "user",
                 "content": text[:200],
