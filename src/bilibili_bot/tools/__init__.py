@@ -1,14 +1,15 @@
-"""Bilibili Bot 工具系统 —— LLM Function Calling 工具定义与执行。"""
+"""Bilibili Bot 工具系统 —— PydanticAI Tool 定义与执行。"""
 
 from __future__ import annotations
 
+import functools
 import subprocess
-import json
 import time
 from pathlib import Path
 from typing import Any
 
 import structlog
+from pydantic_ai import Tool
 
 logger = structlog.get_logger()
 
@@ -26,56 +27,22 @@ MAX_CACHE_SIZE = 50
 _last_transcribe_at: float = 0
 _transcript_cache: dict[str, str] = {}
 
-TOOL_DEFINITIONS: list[dict[str, Any]] = [
-    {
-        "type": "function",
-        "function": {
-            "name": "get_video_content",
-            "description": (
-                "获取B站视频的内容总结。先尝试AI摘要，不可用时自动降级为语音转录。"
-                "当用户询问'这个视频讲了什么'、'视频内容'或需要了解视频时调用。"
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "bvid": {"type": "string", "description": "视频的BV号，如 BV1xx411c7mD"}
-                },
-                "required": ["bvid"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "search_web",
-            "description": (
-                "搜索互联网获取信息。当用户询问实时新闻、特定知识点、"
-                "或需要查找资料时调用。返回搜索结果摘要。"
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "搜索关键词，用中文或英文"}
-                },
-                "required": ["query"],
-            },
-        },
-    },
-]
 
+def _with_tool_logging(func):
+    """包装工具函数，记录 structlog 日志。"""
 
-def execute_tool(name: str, arguments: dict[str, Any]) -> str:
-    """执行工具并返回结果字符串。"""
-    try:
-        if name == "get_video_content":
-            return _get_video_content(arguments.get("bvid", ""))
-        elif name == "search_web":
-            return _search_web(arguments.get("query", ""))
-        else:
-            return f"错误：未知工具 {name}"
-    except Exception as e:
-        logger.warning("tool_execution_failed", tool=name, error=str(e))
-        return f"工具执行失败: {e}"
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        logger.info(
+            "tool_call_start",
+            tool=func.__name__,
+            args=kwargs if kwargs else {},
+        )
+        result = func(*args, **kwargs)
+        logger.info("tool_call_end", tool=func.__name__, result_preview=result[:200] if result else "")
+        return result
+
+    return wrapper
 
 
 def _get_video_content(bvid: str) -> str:
@@ -155,8 +122,8 @@ def _search_web(query: str) -> str:
     if not query:
         return "错误：未提供搜索关键词"
     try:
-        from bilibili_bot.tools.web_search import web_search
         from bilibili_bot.config import BotConfig
+        from bilibili_bot.tools.web_search import web_search
 
         limit = 30
         try:
@@ -168,3 +135,25 @@ def _search_web(query: str) -> str:
         return web_search(query, daily_limit=limit)
     except ImportError:
         return "搜索功能不可用"
+
+
+# ── PydanticAI Tool 定义 ──
+
+def get_video_content(bvid: str) -> str:
+    """获取B站视频的内容总结。先尝试AI摘要，不可用时自动降级为语音转录。
+    当用户询问'这个视频讲了什么'、'视频内容'或需要了解视频时调用。
+    """
+    return _get_video_content(bvid)
+
+
+def search_web(query: str) -> str:
+    """搜索互联网获取信息。当用户询问实时新闻、特定知识点、
+    或需要查找资料时调用。返回搜索结果摘要。
+    """
+    return _search_web(query)
+
+
+TOOLS = [
+    Tool(_with_tool_logging(get_video_content)),
+    Tool(_with_tool_logging(search_web)),
+]

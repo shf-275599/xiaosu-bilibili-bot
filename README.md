@@ -6,21 +6,22 @@
 
 - **Pipeline 管道架构** - 模块化处理流程（dedup → filter → rate_limit → generate → safety → send）
 - **多来源监听** - 消息通知回复、@我消息、自己动态评论、自己视频评论、私信
-- **AI 智能回复** - DeepSeek V4 Flash，支持 Function Calling（Tool Calling）
-- **上下文富化** - 自动携带视频标题、父评论内容、私信对话历史、BV号、用户画像、视频热度
+- **AI 智能回复** - DeepSeek V4 Flash，基于 smolagents 的 Tool Calling Agent（`ToolCallingAgent`），支持工具调用（视频内容获取、联网搜索）
+- **上下文富化** - 自动携带视频标题、父评论内容、私信对话历史、BV号、用户画像、视频热度、评论区热门评论及情绪分析
 - **视频内容工具** - 用户 @bot 可获取视频 AI 摘要，不可用时自动降级为 Whisper 语音转录
-- **联网搜索** - Tavily 优先（月度配额），自动降级到 DuckDuckGo
+- **联网搜索** - Tavily 优先（每日配额），自动降级到 DuckDuckGo
 - **Cookie 自动刷新** - RSA-OAEP 加密 + refresh_csrf 完整链路
 - **DM 私信回复** - 监听私信，AI 生成回复并发送（含 WBI 签名）
-- **保守风控** - 随机延迟、来源熔断、全局熔断、小时/日回复上限
+- **保守风控** - 随机延迟、来源熔断、全局熔断、小时/日回复上限、单用户/单内容频控
 - **类型安全配置** - Pydantic v2 配置验证
 - **结构化日志** - structlog JSON 格式，便于监控
-- **工具调用日志** - 记录每次 Function Calling 的工具名称、参数和结果预览
+- **工具调用日志** - smolagents 内置日志记录每次工具调用的规划、步骤和结果
 - **每日统计报告** - 定时向主人推送当日回复/工具调用/错误统计
-- **自动跳过** - 同一用户反复触发 fatal 错误时自动屏蔽，节省 API 调用
-- **多轮对话记忆** - 私信超 20 条时自动总结对话背景，保持上下文连贯
+- **自动跳过** - 同一用户反复触发 fatal 错误时自动跳过，节省 API 调用
+- **多轮对话记忆** - 私信超 30 条时自动总结对话背景；评论连续对话持久化到 `bot-state.json`
 - **评论连续对话** - 追踪同一用户在同一视频下的连续对话，保持回复连贯性
-- **回复质量反馈** - 定期检查自己回复的点赞/回复数，追踪回复效果
+- **回复质量反馈** - 每 6 小时检查最近 7 天自己回复的点赞/回复数，追踪回复效果
+- **评论区热评注入** - msgfeed 源拉取前 5 条热评 + 评论区情绪分析，让 AI 理解评论区整体氛围
 
 ## 快速开始
 
@@ -204,7 +205,7 @@ timeout_seconds = 25               # AI 调用超时
 max_reply_chars = 100              # 评论回复字数上限（工具调用时可延长）
 tools_enabled = true               # 启用 Function Calling
 tool_max_iterations = 3            # 工具调用最大迭代次数
-search_quota_monthly = 30          # Tavily 每月搜索次数上限
+search_quota_daily = 30             # 搜索次数每日上限
 
 [ai.providers.deepseek]
 type = "openai_compatible"
@@ -251,7 +252,7 @@ Bot 自动调用 `get_video_content` 工具：
 2. 不可用时自动降级为 Whisper 语音转录（30-90s）
 3. 转录结果缓存，同一视频不重复转录
 
-**联网搜索**：在私信或评论中问 "今天有什么新闻"、"查一下XX"，Bot 自动调用 `search_web` 工具，Tavily 搜索优先（月度配额 30 次），配额耗尽自动降级 DuckDuckGo。
+**联网搜索**：在私信或评论中问 "今天有什么新闻"、"查一下XX"，Bot 自动调用 `search_web` 工具，Tavily 搜索优先（每日配额 30 次），配额耗尽自动降级 DuckDuckGo。
 
 ## 数据文件
 
@@ -262,7 +263,7 @@ Bot 自动调用 `get_video_content` 工具：
 | `processed.jsonl` | JSONL | 事件去重记录。每条处理过的事件（成功/失败/跳过）都记一行 | ❌ **删了会丢失去重状态**，已回复过的评论可能被重复回复 | Bot 每天自动检查：文件 >10MB 或 >5000 条时自动 compact 去重。也可手动 `StateStore().compact_processed()` |
 | `reply-history.jsonl` | JSONL | 回复历史（仅成功回复，用于审计） | ✅ 可以删除，只影响历史追溯 | 保留最近 10000 条，自动裁剪 |
 | `bot-state.json` | JSON | 运行时状态：`rate_limit`（频控计数/熔断状态）、`source_last_run`（各来源上次运行时间戳）、`cookie_health`（Cookie 健康状态）、`comment_contexts`（评论连续对话历史） | ❌ **删了会丢失频控状态和对话历史**，可能短时间大量回复 | 可手动改 `cooldown_until=0` 解除熔断 |
-| `search_quota.json` | JSON | Tavily 搜索月度配额 `{"month":"2026-05","count":12}` | ✅ 可以删除或把 count 改为 0 重置配额 | 月初自动重置 |
+| `search_quota.json` | JSON | 每日搜索配额 `{"day":"2026-05-11","count":12}` | ✅ 可以删除或把 count 改为 0 重置配额 | 次日自动重置 |
 | `feedback.jsonl` | JSONL | 回复质量反馈数据（点赞数、回复数） | ✅ 可以删除，只影响质量统计 | 每 6 小时检查一次，保留最近 7 天数据 |
 
 > 上下文富化用的数据（视频标题、父评论、私信历史）**不存储在任何文件中**，每次从 B站 API 实时获取，用完即弃。
@@ -273,45 +274,50 @@ Bot 自动调用 `get_video_content` 工具：
 ```
 bilibili-bot/
 ├── src/bilibili_bot/          # 源代码
-│   ├── __main__.py           # 入口
-│   ├── config.py             # Pydantic 配置
-│   ├── client.py             # HTTP 客户端（WBI 签名）
-│   ├── events.py             # 事件模型
-│   ├── state.py              # 状态存储（带文件锁）
-│   ├── cookie.py             # Cookie 刷新管理
+│   ├── __main__.py           # 入口（daemon 循环 + 主流程）
+│   ├── config.py             # Pydantic 配置（所有配置模型）
+│   ├── client.py             # HTTP 客户端（WBI 签名 + Cookie注入）
+│   ├── events.py             # 事件模型（CommentEvent / DMEvent）
+│   ├── state.py              # 状态存储（带文件锁，JSONL+JSON）
+│   ├── cookie.py             # Cookie 刷新管理（RSA-OAEP + refresh_csrf）
+│   ├── wbi.py                # WBI 签名算法
+│   ├── log.py                # 结构化日志配置（structlog）
+│   ├── stats.py              # 每日统计报告生成
+│   ├── auto_skip.py          # 已知问题用户自动跳过
+│   ├── feedback.py           # 回复质量反馈追踪（点赞/回复数）
 │   ├── pipeline/             # 处理管道
-│   │   ├── base.py           # PipelineStage ABC
-│   │   ├── dedup.py          # 去重
-│   │   ├── filter.py         # 过滤
-│   │   ├── rate_limit.py     # 频控 + 熔断
-│   │   ├── generate.py       # AI 生成（含 Tool Calling）
-│   │   ├── safety.py         # 内容安全审查
-│   │   └── send.py           # 发送（含 DM WBI 签名）
+│   │   ├── base.py           # PipelineStage ABC + Pipeline
+│   │   ├── dedup.py          # 去重（新/已回复/已见/失败重试/致命错误）
+│   │   ├── filter.py         # 过滤（自己/空/黑名单/纯颜文字/过短/仅关注）
+│   │   ├── rate_limit.py     # 频控 + 熔断（小时/日/用户/OID 多维度）
+│   │   ├── generate.py       # AI 生成（smolagents ToolCallingAgent + Provider 降级）
+│   │   ├── safety.py         # 内容安全审查（敏感词/PII/链接/长度）
+│   │   └── send.py           # 发送（评论 WBI + 私信 WBI 签名）
 │   ├── providers/            # AI Provider
-│   │   ├── base.py           # Provider ABC
-│   │   ├── openai_compat.py  # OpenAI 兼容（含 tool calling）
+│   │   ├── base.py           # Provider ABC + ReplyResult
+│   │   ├── openai_compat.py  # OpenAI 兼容 Provider（纯生成，无 tool calling）
 │   │   └── manager.py        # Provider 管理
-│   ├── tools/                # LLM Function Calling 工具
-│   │   ├── __init__.py       # 工具定义 + 执行（摘要/转录/搜索）
-│   │   ├── transcribe.py     # Whisper 语音转录
-│   │   └── web_search.py     # 联网搜索
-│   ├── stats.py              # 每日统计报告
-│   ├── auto_skip.py          # 已知问题自动跳过
-│   ├── feedback.py           # 回复质量反馈追踪
+│   ├── tools/                # smolagents @tool 工具
+│   │   ├── __init__.py       # @tool 定义 + 实现（get_video_content / search_web）
+│   │   ├── transcribe.py     # Whisper 语音转录（yt-dlp + faster-whisper）
+│   │   └── web_search.py     # 联网搜索（Tavily + DuckDuckGo 降级）
 │   └── sources/              # 数据来源
 │       ├── base.py           # Source ABC
-│       ├── msgfeed.py        # 消息通知 + bvid 补充
-│       ├── mention.py        # @我消息 + bvid 补充
-│       ├── own_video.py      # 自己视频评论
-│       ├── own_dynamic.py    # 自己动态评论
-│       └── dm.py             # 私信
+│       ├── msgfeed.py        # 消息通知回复 + bvid 补充 + 用户画像 + 热评注入
+│       ├── mention.py        # @我消息（复用 msgfeed enrich 逻辑）
+│       ├── own_video.py      # 自己视频评论（带重试）
+│       ├── own_dynamic.py    # 自己动态评论（视频/图文）
+│       └── dm.py             # 私信（会话列表 + 历史消息 + 分享解析）
 ├── scripts/                  # 辅助脚本
-│   └── bilibili_wbi.py       # WBI 签名 + AI 摘要
+│   └── bilibili_wbi.py       # WBI 签名 + AI 摘要 + 用户信息 + 用户搜索
 ├── models/whisper/           # Whisper 模型（gitignored）
 ├── config/                   # 配置文件
-│   └── system-prompt.txt     # 角色 Prompt（独立维护）
+│   ├── system-prompt.txt     # 角色 Prompt（独立维护，7 大场景策略）
+│   ├── bot-config.toml       # 机器人完整配置
+│   ├── bilibili-cookies.txt  # B站 Cookie（Netscape 格式，gitignored）
+│   └── bilibili-cookies.example.txt
 ├── data/                     # 运行时数据（gitignored）
-├── tests/                    # 单元测试
+├── tests/                    # 单元测试（20 个）
 ├── bilibot.service           # systemd 服务文件
 ├── pyproject.toml
 └── README.md
@@ -325,26 +331,45 @@ bilibili-bot/
 Source.fetch() → [Event]
     ↓
 DedupStage      → 跳过已处理（失败重试最多 5 次，冷却 5 分钟；致命错误 1 小时后过期）
-FilterStage     → 跳过自己/空/黑名单/纯颜文字/过短（DM pipeline 跳过此阶段）
+FilterStage     → 跳过自己/空/黑名单/纯颜文字/过短/非关注（DM pipeline 跳过此阶段）
 RateLimitStage  → 频控检查 + 等待随机延迟
-GenerateStage   → DeepSeek 生成回复（含 Tool Calling）
+GenerateStage   → smolagents ToolCallingAgent 带工具调用生成 → 失败降级 Provider.generate()
 SafetyStage     → 敏感词/PII/链接/长度四重检查
 SendStage       → 发送到 Bilibili API（评论 WBI 签名 + 私信 WBI 签名）
 ```
 
-### Tool Calling 流程
+### Tool Calling 流程（smolagents）
 
 ```
 用户评论 "总结一下这个视频"
     ↓
-GenerateStage → 构建 prompt（含 bvid）
+GenerateStage._generate_with_agent()
     ↓
-DeepSeek API（带 tools 定义）
-    ├─ 无需工具 → 直接生成回复
-    └─ tool_calls: get_video_content(bvid)
-         ├─ AI 摘要可用 → 返回摘要 → 生成回复
-         └─ AI 摘要不可用 → Whisper 转录降级 → 生成回复
+smolagents ToolCallingAgent
+    ├─ model=LiteLLMModel("openai/deepseek-v4-flash")
+    ├─ tools=[get_video_content, search_web]
+    ├─ 最多 3 步规划-执行循环
+    └─ 输出 → 提取为回复文本
+        │
+        ├─ 成功 → ReplyResult(text=..., tool_calls=[...])
+        └─ 异常 → 降级 Provider.generate_reply()（纯 LLM 回复，无工具）
 ```
+
+**工具定义**（`tools/__init__.py`）：
+```python
+@tool
+def get_video_content(bvid: str) -> str: ...
+    # AI 摘要 → 失败 → Whisper 转录 → 失败 → 错误提示
+
+@tool  
+def search_web(query: str) -> str: ...
+    # Tavily → 配额耗尽/失败 → DuckDuckGo → 失败 → 错误提示
+```
+
+**smolagents vs 旧方案**：
+- 旧：手写 ~60 行 tool calling 循环（`openai_compat.py` 的 `generate_with_tools`），手动管理 messages、tool_calls 解析、迭代控制
+- 新：smolagents `ToolCallingAgent` 一行 `agent.run(user_msg)` 完成规划-执行-输出全流程，内置 LiteLLM 支持 DeepSeek
+- 降级：smolagents 异常时自动降级为 `ProviderManager.generate_reply()`（纯 LLM 回复，无工具）
 
 ### 事件模型
 
@@ -412,6 +437,11 @@ Bot 在生成 AI 回复前，会从 B站 API 实时获取额外信息注入 prom
 视频收藏数：2000                                ← 从 /x/web-interface/view 获取
 UP主：测试UP主                                 ← 从 /x/web-interface/view 获取
 UP主粉丝数：50000                              ← 从 /x/space/wbi/acc/info 查
+评论区情绪：积极                                ← 从 /x/v2/reply 热评分析
+热门评论：                                      ← 从 /x/v2/reply 获取 top 5
+  1. 这也太强了吧（233赞）
+  2. 已三连，求更新（156赞）
+  ...
 对话背景摘要：用户之前问过好                     ← 从 bot-state.json 的 comment_contexts 获取
 历史对话：                                      ← 从 bot-state.json 的 comment_contexts 获取
   对方：你好
@@ -429,6 +459,7 @@ UP主粉丝数：50000                              ← 从 /x/space/wbi/acc/inf
 - `parent_content` / `thread_context` → 来源 API 返回的 `parent_reply` 字段
 - `author_follower` / `author_level` / `author_fans_count` → `MsgFeedReplySource._enrich_users()` 调用 `/x/space/wbi/acc/info`
 - `interaction_count` / `recent_replies` / `conversation_summary` → 从 `bot-state.json` 的 `comment_contexts` 获取
+- `hot_comments` / `comment_area_sentiment` → `MsgFeedReplySource._enrich_hot_comments()` 调用 `/x/v2/reply` 获取前 5 条热评，分析评论区情绪（positive/negative/neutral）
 
 #### 私信场景
 
@@ -437,11 +468,11 @@ UP主粉丝数：50000                              ← 从 /x/space/wbi/acc/inf
 [user]   你好呀（第1条，200字截断）
 [assistant] 你好！有什么事（bot回复）
 [user]   你叫什么名字（第2条）
-...（共10条，user/bot交替）
+...（共15条，user/bot交替）
 [user]   用户 小张 发来私信：你会写代码吗？       ← 最新一条
 ```
 
-每次从 B站私信 API 拉 **40 条**历史，取最近 **10 条**注入 prompt，每条截断到 **200 字**。user 和 bot 消息交替排列，给 LLM 完整的对话上下文。
+每次从 B站私信 API 拉 **60 条**历史，取最近 **15 条**注入 prompt，每条截断到 **200 字**。user 和 bot 消息交替排列，给 LLM 完整的对话上下文。
 
 ## 风控策略
 
@@ -482,7 +513,7 @@ Token 估算: ~19.0k
 
 ### 多轮对话记忆
 
-私信中对话超过 20 条时，Bot 自动调用 LLM 将最老的对话总结为一句话摘要，注入到当前对话的上下文中。短对话不触发，不增加额外 API 调用。
+私信中对话超过 30 条时，Bot 自动调用 LLM 将最老的对话总结为一句话摘要，注入到当前对话的上下文中。短对话不触发，不增加额外 API 调用。
 
 ### 回复质量反馈
 
@@ -535,7 +566,20 @@ PYTHONPATH=src .venv/bin/pytest tests/ -v
 ```bash
 cd /home/shf/bilibili-bot && source .env
 
-# 验证 AI Provider
+# 验证 smolagents 工具链
+.venv/bin/python3 -c "
+from smolagents import LiteLLMModel, ToolCallingAgent
+from bilibili_bot.tools import get_video_content, search_web
+agent = ToolCallingAgent(
+    tools=[get_video_content, search_web],
+    model=LiteLLMModel(model_id='openai/deepseek-v4-flash', api_base='https://api.deepseek.com/v1', api_key=__import__('os').environ['DEEPSEEK_API_KEY']),
+    max_steps=1,
+)
+result = agent.run('你好，回复一个简短的打招呼')
+print(result)
+"
+
+# 验证 AI Provider（直接调用，无工具）
 .venv/bin/python3 -c "
 from bilibili_bot.config import BotConfig
 from bilibili_bot.providers.openai_compat import OpenAICompatibleProvider

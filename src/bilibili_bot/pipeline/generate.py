@@ -137,18 +137,12 @@ class AIGenerateStage(PipelineStage):
 def _generate_reply_with_tools(context, messages):
     """尝试带 tool calling 的生成，失败则降级为普通生成。"""
     from bilibili_bot.providers.openai_compat import OpenAICompatibleProvider
-    from bilibili_bot.tools import TOOL_DEFINITIONS, execute_tool
 
     primary = context.providers.primary
 
     if isinstance(primary, OpenAICompatibleProvider) and context.config.ai.tools_enabled:
         try:
-            return primary.generate_with_tools(
-                messages,
-                TOOL_DEFINITIONS,
-                execute_tool,
-                max_iterations=context.config.ai.tool_max_iterations,
-            )
+            return primary.generate_with_tools(messages)
         except Exception as e:
             logger.warning("tools_generation_failed", error=str(e))
 

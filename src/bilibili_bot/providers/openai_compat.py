@@ -1,15 +1,62 @@
 from __future__ import annotations
 
-import json
 import os
-from typing import Any, Callable
+from typing import Any
 
 import requests
 import structlog
+from pydantic_ai import Agent
+from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
+from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.providers.openai import OpenAIProvider
+from pydantic_ai.settings import ModelSettings
+from pydantic_ai.usage import UsageLimits
 
 from bilibili_bot.providers.base import BaseProvider, ReplyResult
+from bilibili_bot.tools import TOOLS
 
 logger = structlog.get_logger()
+
+
+def _messages_to_agent_input(messages: list[dict[str, str]]) -> tuple[str, list[ModelRequest | ModelResponse] | None]:
+    """将 openai_compat 消息格式转为 PydanticAI 的 (user_prompt, message_history)。
+
+    messages[0] = system prompt（由 Agent 单独设置）
+    messages[-1] = 当前用户输入
+    messages[1:-1] = 对话历史
+    """
+    if not messages:
+        return "", None
+
+    user_prompt = messages[-1].get("content", "")
+    history: list[ModelRequest | ModelResponse] = []
+    for msg in messages[1:-1]:
+        role = msg.get("role", "")
+        content = msg.get("content", "")
+        if role == "user":
+            history.append(ModelRequest(parts=[UserPromptPart(content=content)]))
+        elif role == "assistant":
+            history.append(ModelResponse(parts=[TextPart(content=content)]))
+    return user_prompt, history if history else None
+
+
+def _agent_result_to_reply(result, provider_name: str) -> ReplyResult:
+    """将 PydanticAI AgentRunResult 转为 ReplyResult。"""
+    return ReplyResult(success=True, text=str(result.output), provider=provider_name)
+
+
+def _create_pydantic_agent(system_prompt: str, config, provider_name: str) -> Agent:
+    """创建配置好的 PydanticAI Agent。"""
+    provider_cfg = config.ai.providers.get(provider_name)
+    if not provider_cfg:
+        raise ValueError(f"未找到 AI Provider 配置: {provider_name}")
+    if provider_cfg.type != "openai_compatible":
+        raise ValueError(f"Provider {provider_name} 类型不是 openai_compatible")
+
+    api_key = os.environ.get(provider_cfg.api_key_env or "", "")
+    provider = OpenAIProvider(base_url=(provider_cfg.base_url or "").rstrip("/"), api_key=api_key)
+    model = OpenAIChatModel(provider_cfg.model or "", provider=provider)
+    return Agent(model, system_prompt=system_prompt, tools=TOOLS)
 
 
 class OpenAICompatibleProvider(BaseProvider):
@@ -103,60 +150,29 @@ class OpenAICompatibleProvider(BaseProvider):
 
         return ReplyResult(True, text=text, provider=self.name, raw=data)
 
-    def generate_with_tools(
-        self,
-        messages: list[dict[str, str]],
-        tools: list[dict[str, Any]],
-        tool_executor: Callable[[str, dict[str, Any]], str],
-        max_iterations: int = 3,
-    ) -> ReplyResult:
-        current_messages = list(messages)
-        called_tools: set[str] = set()
+    def generate_with_tools(self, messages: list[dict[str, str]]) -> ReplyResult:
+        """使用 PydanticAI Agent 进行带工具调用的回复生成。"""
+        if not messages:
+            return ReplyResult(False, provider=self.name, error="空消息")
 
-        for _ in range(max_iterations):
-            result = self._call_api(current_messages, tools=tools)
+        system_prompt = messages[0].get("content", "") if messages else ""
+        agent = _create_pydantic_agent(system_prompt, self.global_config, self.name)
 
-            if result.success:
-                result.tool_calls = list(called_tools)
-                return result
+        user_prompt, message_history = _messages_to_agent_input(messages)
 
-            if result.error == "TOOL_CALLS" and result.raw:
-                tool_calls = result.raw["tool_calls"]
-                full_msg = result.raw.get("full_message", {})
-
-                assistant_msg: dict[str, Any] = {
-                    "role": "assistant",
-                    "content": full_msg.get("content"),
-                    "tool_calls": tool_calls,
-                }
-                # DeepSeek thinking mode 要求回传 reasoning_content
-                if full_msg.get("reasoning_content"):
-                    assistant_msg["reasoning_content"] = full_msg["reasoning_content"]
-                current_messages.append(assistant_msg)
-
-                for tc in tool_calls:
-                    fn_name = tc["function"]["name"]
-                    called_tools.add(fn_name)
-                    try:
-                        fn_args = json.loads(tc["function"]["arguments"])
-                    except json.JSONDecodeError:
-                        fn_args = {}
-                    logger.info("tool_call_start", tool=fn_name, args=fn_args)
-                    tool_result = tool_executor(fn_name, fn_args)
-                    logger.info("tool_call_end", tool=fn_name, result_preview=tool_result[:200] if tool_result else "")
-                    current_messages.append({
-                        "role": "tool",
-                        "tool_call_id": tc["id"],
-                        "content": tool_result,
-                    })
-                continue
-
-            error_msg = result.error
-            return result
-
-        return ReplyResult(
-            False,
-            provider=self.name,
-            error=f"Tool calling 超过最大迭代次数 ({max_iterations})",
-            retriable=False,
-        )
+        try:
+            result = agent.run_sync(
+                user_prompt=user_prompt,
+                message_history=message_history,
+                model_settings=ModelSettings(
+                    temperature=self.global_config.reply.temperature,
+                    max_tokens=self.global_config.reply.max_tokens,
+                    timeout=self.global_config.ai.timeout_seconds,
+                ),
+                usage_limits=UsageLimits(
+                    request_limit=self.global_config.ai.tool_max_iterations + 1,
+                ),
+            )
+            return _agent_result_to_reply(result, self.name)
+        except Exception as e:
+            return ReplyResult(False, provider=self.name, error=f"Agent 执行失败: {e}", retriable=True)
