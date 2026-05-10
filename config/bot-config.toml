@@ -8,7 +8,7 @@ request_timeout_seconds = 25
 source_failure_cooldown_seconds = 180
 report_enabled = true
 report_owner_uid = "363098992"
-report_hour = 22
+report_hour = 0
 
 [sources.msgfeed]
 enabled = true
