@@ -131,7 +131,7 @@ class AIGenerateStage(PipelineStage):
             logger.error("unknown_event_type", event_type=type(event).__name__)
             return StageResult.SKIP
 
-        reply = _generate_reply_with_tools(context, messages)
+        reply = context.providers.generate_reply(messages)
 
         if not reply.success:
             logger.error("generate_failed", event_key=event.event_key, error=reply.error)
@@ -143,18 +143,3 @@ class AIGenerateStage(PipelineStage):
         context.provider_used = reply.provider
         context.tool_calls = reply.tool_calls
         return StageResult.CONTINUE
-
-
-def _generate_reply_with_tools(context, messages):
-    """尝试带 tool calling 的生成，失败则降级为普通生成。"""
-    from bilibili_bot.providers.openai_compat import OpenAICompatibleProvider
-
-    primary = context.providers.primary
-
-    if isinstance(primary, OpenAICompatibleProvider) and context.config.ai.tools_enabled:
-        try:
-            return primary.generate_with_tools(messages)
-        except Exception as e:
-            logger.warning("tools_generation_failed", error=str(e))
-
-    return context.providers.generate_reply(messages)

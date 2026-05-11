@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import functools
 import subprocess
+import threading
 import time
 from pathlib import Path
 
@@ -27,6 +28,7 @@ MAX_CACHE_SIZE = 50
 
 _last_transcribe_at: float = 0
 _transcript_cache: dict[str, str] = {}
+_transcribe_lock = threading.Lock()
 
 
 def _with_tool_logging(func):
@@ -90,17 +92,18 @@ def _try_ai_summary(bvid: str) -> str:
 def _try_whisper_transcript(bvid: str) -> str:
     global _last_transcribe_at, _transcript_cache
 
-    if bvid in _transcript_cache:
-        logger.info("transcript_cache_hit", bvid=bvid)
-        return _transcript_cache[bvid]
+    with _transcribe_lock:
+        if bvid in _transcript_cache:
+            logger.info("transcript_cache_hit", bvid=bvid)
+            return _transcript_cache[bvid]
 
-    now = time.time()
-    if _last_transcribe_at > 0 and now - _last_transcribe_at < TRANSCRIBE_COOLDOWN:
-        remaining = int(TRANSCRIBE_COOLDOWN - (now - _last_transcribe_at))
-        logger.info("transcribe_cooldown", bvid=bvid, remaining=remaining)
-        return f"语音转录冷却中（{remaining}秒后可重试）。请稍后再问。"
+        now = time.time()
+        if _last_transcribe_at > 0 and now - _last_transcribe_at < TRANSCRIBE_COOLDOWN:
+            remaining = int(TRANSCRIBE_COOLDOWN - (now - _last_transcribe_at))
+            logger.info("transcribe_cooldown", bvid=bvid, remaining=remaining)
+            return f"语音转录冷却中（{remaining}秒后可重试）。请稍后再问。"
 
-    _last_transcribe_at = now
+        _last_transcribe_at = now
 
     try:
         from bilibili_bot.tools.transcribe import transcribe_video
@@ -112,9 +115,10 @@ def _try_whisper_transcript(bvid: str) -> str:
         return f"语音转录失败: {e}"
 
     if result:
-        _transcript_cache[bvid] = result
-        if len(_transcript_cache) > MAX_CACHE_SIZE:
-            _transcript_cache.pop(next(iter(_transcript_cache)))
+        with _transcribe_lock:
+            _transcript_cache[bvid] = result
+            if len(_transcript_cache) > MAX_CACHE_SIZE:
+                _transcript_cache.pop(next(iter(_transcript_cache)))
 
     return result
 

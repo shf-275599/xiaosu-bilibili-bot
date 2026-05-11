@@ -40,8 +40,25 @@ def _messages_to_agent_input(messages: list[dict[str, str]]) -> tuple[str, list[
 
 
 def _agent_result_to_reply(result, provider_name: str) -> ReplyResult:
-    """将 PydanticAI AgentRunResult 转为 ReplyResult。"""
-    return ReplyResult(success=True, text=str(result.output), provider=provider_name)
+    tool_calls: list[str] = []
+    try:
+        messages = result.all_messages()
+        for msg in messages:
+            for part in msg.parts:
+                part_name = type(part).__name__
+                if "ToolCall" in part_name:
+                    name = getattr(part, "tool_name", "")
+                    if name:
+                        tool_calls.append(name)
+    except Exception:
+        pass
+
+    return ReplyResult(
+        success=True,
+        text=str(result.output),
+        provider=provider_name,
+        tool_calls=tool_calls,
+    )
 
 
 def _create_pydantic_agent(system_prompt: str, config, provider_name: str) -> Agent:
