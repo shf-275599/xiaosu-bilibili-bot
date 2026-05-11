@@ -102,8 +102,8 @@ class MsgFeedReplySource(BaseSource):
                 if not opus_id:
                     continue
 
-                # 如果已有 video_title（mention 源从 item.title 提取），写入缓存
-                if event.video_title:
+                # mention 源：将正确的动态标题写入缓存
+                if event.source_type == "mention" and event.video_title:
                     _dynamic_title_cache[opus_id] = event.video_title
                     continue
 
