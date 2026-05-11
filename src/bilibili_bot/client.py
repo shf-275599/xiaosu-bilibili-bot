@@ -18,6 +18,15 @@ USER_AGENT = (
 WBI_KEYS_URL = "https://api.bilibili.com/x/web-interface/nav"
 
 
+def _default_headers(cookie_store: CookieStore) -> dict[str, str]:
+    return {
+        "Cookie": cookie_store.get_header(),
+        "User-Agent": USER_AGENT,
+        "Referer": "https://www.bilibili.com/",
+        "Origin": "https://www.bilibili.com",
+    }
+
+
 class BilibiliSession(requests.Session):
     def __init__(self, cookie_store: CookieStore, timeout: int = 25):
         super().__init__()
@@ -32,14 +41,8 @@ class BilibiliSession(requests.Session):
         adapter = HTTPAdapter(max_retries=retry)
         self.mount("https://", adapter)
 
-    def _inject_cookies(self) -> None:
-        self.headers["Cookie"] = self._cookie_store.get_header()
-        self.headers.setdefault("User-Agent", USER_AGENT)
-        self.headers.setdefault("Referer", "https://www.bilibili.com/")
-        self.headers.setdefault("Origin", "https://www.bilibili.com")
-
     def request(self, method: str, url: str, **kwargs: Any) -> requests.Response:
-        self._inject_cookies()
+        kwargs.setdefault("headers", {}).update(_default_headers(self._cookie_store))
         kwargs.setdefault("timeout", self._timeout)
         return super().request(method, url, **kwargs)
 

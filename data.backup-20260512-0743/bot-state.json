@@ -1,0 +1,35 @@
+{
+  "cookie_refresh": {
+    "last_check_at": 1778542117.419511
+  },
+  "last_feedback_check": 1778536650,
+  "source_last_run": {
+    "DMSource": 1778543036.5681956,
+    "MsgFeedReplySource": 1778543031.0406039,
+    "MentionMsgFeedSource": 1778543013.8301399,
+    "OwnVideoCommentSource": 1778543013.8301399,
+    "OwnDynamicCommentSource": 1778543013.8301399
+  },
+  "last_compact_check": 1778493441,
+  "last_report_date": "2026-05-12",
+  "rate_limit": {
+    "failure_count": 0,
+    "cooldown_until": 0.0,
+    "last_request_at": 0.0,
+    "reply_timestamps": [],
+    "user_reply_timestamps": {},
+    "oid_reply_timestamps": {},
+    "source_failures": {
+      "DMSource": 0,
+      "MsgFeedReplySource": 0,
+      "MentionMsgFeedSource": 0,
+      "OwnVideoCommentSource": 0
+    },
+    "source_cooldowns": {
+      "DMSource": 0.0,
+      "MsgFeedReplySource": 0.0,
+      "MentionMsgFeedSource": 0.0,
+      "OwnVideoCommentSource": 0.0
+    }
+  }
+}
