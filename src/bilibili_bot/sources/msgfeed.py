@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+import re
 import structlog
 
 from bilibili_bot.events import Event, CommentEvent, BUSINESS_TYPE_MAP
 from bilibili_bot.sources.base import BaseSource
 
 logger = structlog.get_logger()
+
+
+def _extract_opus_id(uri: str) -> str:
+    """从 B站动态 URI 中提取 opus ID，如 'https://www.bilibili.com/opus/1197036032889978896' → '1197036032889978896'"""
+    m = re.search(r"opus/(\d+)", uri)
+    return m.group(1) if m else ""
 
 
 class MsgFeedReplySource(BaseSource):
@@ -45,42 +52,75 @@ class MsgFeedReplySource(BaseSource):
     def _enrich_events(self, events: list[CommentEvent], client) -> None:
         cache: dict[str, dict] = {}
         for event in events:
-            if event.business_type != "video" or not event.oid:
-                continue
-            need_bvid = not event.bvid
-            need_title = not event.video_title
-            if not need_bvid and not need_title:
+            if not event.oid:
                 continue
 
-            oid = event.oid
-            if oid not in cache:
-                try:
-                    resp = client.get(
-                        "https://api.bilibili.com/x/web-interface/view",
-                        params={"aid": oid},
-                    )
-                    data = resp.json()
-                    if data.get("code") == 0:
-                        cache[oid] = data.get("data", {})
-                except Exception as e:
-                    logger.debug("event_enrich_failed", oid=oid, error=str(e))
+            if event.business_type == "video":
+                need_bvid = not event.bvid
+                need_title = not event.video_title
+                if not need_bvid and not need_title:
+                    continue
 
-            info = cache.get(oid, {})
-            if info:
-                if need_bvid:
-                    event.bvid = info.get("bvid", "")
-                if need_title:
-                    event.video_title = info.get("title", "")
-                if not event.video_desc and info.get("desc"):
-                    event.video_desc = info["desc"][:200]
+                oid = event.oid
+                if oid not in cache:
+                    try:
+                        resp = client.get(
+                            "https://api.bilibili.com/x/web-interface/view",
+                            params={"aid": oid},
+                        )
+                        data = resp.json()
+                        if data.get("code") == 0:
+                            cache[oid] = data.get("data", {})
+                    except Exception as e:
+                        logger.debug("event_enrich_failed", oid=oid, error=str(e))
 
-                stat = info.get("stat", {})
-                event.video_view_count = stat.get("view", 0)
-                event.video_like_count = stat.get("like", 0)
-                event.video_favorite_count = stat.get("favorite", 0)
+                info = cache.get(oid, {})
+                if info:
+                    if need_bvid:
+                        event.bvid = info.get("bvid", "")
+                    if need_title:
+                        event.video_title = info.get("title", "")
+                    if not event.video_desc and info.get("desc"):
+                        event.video_desc = info["desc"][:200]
 
-                owner = info.get("owner", {})
-                event.up_name = owner.get("name", "")
+                    stat = info.get("stat", {})
+                    event.video_view_count = stat.get("view", 0)
+                    event.video_like_count = stat.get("like", 0)
+                    event.video_favorite_count = stat.get("favorite", 0)
+
+                    owner = info.get("owner", {})
+                    event.up_name = owner.get("name", "")
+
+            elif event.business_type in ("dynamic", "dynamic_draw"):
+                # 从 raw_payload 的 uri 中提取 opus ID，调动态详情 API 获取真实内容
+                uri = (event.raw_payload.get("item", {}) or {}).get("uri", "")
+                if not uri:
+                    uri = (event.raw_payload.get("uri", "") or "")
+                opus_id = _extract_opus_id(uri)
+                if not opus_id:
+                    continue
+
+                if opus_id not in cache:
+                    try:
+                        resp = client.get(
+                            "https://api.bilibili.com/x/polymer/web-dynamic/v1/detail",
+                            params={"id": opus_id, "timezone_offset": -480},
+                        )
+                        data = resp.json()
+                        if data.get("code") == 0:
+                            cache[opus_id] = data.get("data", {})
+                    except Exception as e:
+                        logger.debug("dynamic_enrich_failed", opus_id=opus_id, error=str(e))
+
+                info = cache.get(opus_id, {})
+                if info:
+                    item = (info.get("item", {}) or {})
+                    modules = (item.get("modules", {}) or {})
+                    dyn = (modules.get("module_dynamic", {}) or {})
+                    desc = (dyn.get("desc", {}) or {})
+                    text = (desc.get("text", "") or "").strip()
+                    if text:
+                        event.video_title = text[:500]
 
         self._enrich_users(events, client)
 
