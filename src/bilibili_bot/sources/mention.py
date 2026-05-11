@@ -53,6 +53,11 @@ class MentionMsgFeedSource(MsgFeedReplySource):
         # 提取楼中楼上下文：target_reply_content 是用户回复的那条评论
         target_content = item_data.get("target_reply_content", "")[:200] if item_data.get("target_reply_content") else ""
 
+        # 非视频事件（动态/图文）的标题直接从 msgfeed 取，不走后续 enrichment
+        item_title = ""
+        if business_type != "video":
+            item_title = (item_data.get("title", "") or "")[:500]
+
         return CommentEvent(
             source_type="mention",
             event_key=f"{business_type}:{item_data.get('subject_id')}:{item_data.get('source_id')}",
@@ -69,4 +74,5 @@ class MentionMsgFeedSource(MsgFeedReplySource):
             at_me=True,
             bvid="",
             parent_content=target_content,
+            video_title=item_title,
         )

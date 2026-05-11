@@ -73,14 +73,16 @@ class MsgFeedReplySource(BaseSource):
                     event.video_title = info.get("title", "")
                 if not event.video_desc and info.get("desc"):
                     event.video_desc = info["desc"][:200]
-                
+
                 stat = info.get("stat", {})
                 event.video_view_count = stat.get("view", 0)
                 event.video_like_count = stat.get("like", 0)
                 event.video_favorite_count = stat.get("favorite", 0)
-                
+
                 owner = info.get("owner", {})
                 event.up_name = owner.get("name", "")
+
+        self._enrich_users(events, client)
 
         self._enrich_users(events, client)
 
@@ -120,6 +122,11 @@ class MsgFeedReplySource(BaseSource):
         # 提取楼中楼上下文：target_reply_content 是用户回复的那条评论
         target_content = item_data.get("target_reply_content", "")[:200] if item_data.get("target_reply_content") else ""
 
+        # 非视频事件（动态/图文）的标题直接从 msgfeed 取，不走后续 enrichment
+        item_title = ""
+        if business_type != "video":
+            item_title = (item_data.get("title", "") or "")[:500]
+
         return CommentEvent(
             source_type="msgfeed",
             event_key=f"{business_type}:{item_data.get('subject_id')}:{item_data.get('source_id')}",
@@ -136,4 +143,5 @@ class MsgFeedReplySource(BaseSource):
             at_me=True,
             bvid="",
             parent_content=target_content,
+            video_title=item_title,
         )

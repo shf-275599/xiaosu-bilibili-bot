@@ -34,8 +34,9 @@ def build_comment_messages(event: CommentEvent, config) -> list[dict[str, str]]:
     parts = [f"当前时间：{now.strftime('%Y年%m月%d日 %H:%M')}", f"来源：{business_label}"]
 
     if event.video_title:
-        parts.append(f"内容标题：{event.video_title}")
-    if event.bvid:
+        label = "动态内容" if event.business_type in ("dynamic", "dynamic_draw") else "内容标题"
+        parts.append(f"{label}：{event.video_title}")
+    if event.bvid and event.business_type == "video":
         parts.append(f"视频BV号：{event.bvid}")
     if event.video_desc:
         parts.append(f"视频简介：{event.video_desc}")
