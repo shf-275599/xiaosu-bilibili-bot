@@ -26,6 +26,26 @@ def _extract_dynamic_id(uri: str) -> str:
     return ""
 
 
+def _extract_opus_text(opus_data: dict) -> str:
+    """从 opus/detail API 响应中提取文字（modules 为数组格式，含 MODULE_TYPE_CONTENT）。"""
+    item = (opus_data.get("item", {}) or {})
+    modules = item.get("modules", []) or []
+    for mod in modules:
+        if mod.get("module_type") == "MODULE_TYPE_CONTENT":
+            content = mod.get("module_content", {}) or {}
+            paragraphs = content.get("paragraphs", []) or []
+            parts = []
+            for para in paragraphs:
+                text_node = para.get("text", {}) or {}
+                for node in (text_node.get("nodes", []) or []):
+                    word = node.get("word", {}) or {}
+                    w = word.get("words", "")
+                    if w:
+                        parts.append(w)
+            return "".join(parts)
+    return ""
+
+
 class MsgFeedReplySource(BaseSource):
     def __init__(self, config):
         self.config = config
@@ -106,19 +126,51 @@ class MsgFeedReplySource(BaseSource):
                 if event.video_title:
                     continue
 
-                if event.oid not in cache:
+                uri = (event.raw_payload.get("item", {}) or {}).get("uri", "")
+                if not uri:
+                    uri = (event.raw_payload.get("uri", "") or "")
+                dynamic_id = _extract_dynamic_id(uri)
+
+                # 从 detail API 中提取真实文章 ID
+                real_article_id = ""
+                if dynamic_id:
+                    if dynamic_id not in cache:
+                        try:
+                            resp = client.get(
+                                "https://api.bilibili.com/x/polymer/web-dynamic/v1/detail",
+                                params={"id": dynamic_id, "timezone_offset": -480},
+                            )
+                            data = resp.json()
+                            if data.get("code") == 0:
+                                cache[dynamic_id] = data.get("data", {})
+                        except Exception as e:
+                            logger.debug("article_detail_failed", dynamic_id=dynamic_id, error=str(e))
+
+                    detail_data = cache.get(dynamic_id, {})
+                    if detail_data:
+                        item_d = (detail_data.get("item", {}) or {})
+                        modules_d = (item_d.get("modules", {}) or {})
+                        dyn_d = (modules_d.get("module_dynamic", {}) or {})
+                        major_d = dyn_d.get("major", {}) or {}
+                        article_info = major_d.get("article", {}) or {}
+                        real_article_id = str(article_info.get("id", ""))
+
+                if not real_article_id:
+                    real_article_id = event.oid
+
+                if real_article_id not in cache:
                     try:
                         resp = client.get(
                             "https://api.bilibili.com/x/article/view",
-                            params={"id": event.oid},
+                            params={"id": real_article_id},
                         )
                         data = resp.json()
                         if data.get("code") == 0:
-                            cache[event.oid] = data.get("data", {})
+                            cache[real_article_id] = data.get("data", {})
                     except Exception as e:
-                        logger.debug("article_enrich_failed", oid=event.oid, error=str(e))
+                        logger.debug("article_enrich_failed", oid=real_article_id, error=str(e))
 
-                info = cache.get(event.oid, {})
+                info = cache.get(real_article_id, {})
                 if info:
                     event.video_title = info.get("title", "") or ""
                     summary = info.get("summary", "") or ""
@@ -132,6 +184,8 @@ class MsgFeedReplySource(BaseSource):
                 dynamic_id = _extract_dynamic_id(uri)
                 if not dynamic_id:
                     continue
+
+                is_opus = "opus/" in uri
 
                 # mention 源：将标题写入缓存（拒绝转发动态的无效标题）
                 if event.source_type == "mention" and event.video_title and event.video_title not in ("转发动态", "分享动态"):
@@ -156,30 +210,50 @@ class MsgFeedReplySource(BaseSource):
                     except Exception as e:
                         logger.debug("dynamic_enrich_failed", dynamic_id=dynamic_id, error=str(e))
 
+                    if is_opus:
+                        opus_cache_key = f"opus_{dynamic_id}"
+                        try:
+                            resp = client.get(
+                                "https://api.bilibili.com/x/polymer/web-dynamic/v1/opus/detail",
+                                params={"id": dynamic_id, "timezone_offset": -480},
+                            )
+                            data = resp.json()
+                            if data.get("code") == 0:
+                                cache[opus_cache_key] = data.get("data", {})
+                        except Exception as e:
+                            logger.debug("opus_enrich_failed", dynamic_id=dynamic_id, error=str(e))
+
                 info = cache.get(dynamic_id, {})
                 if info:
                     item = (info.get("item", {}) or {})
                     modules = (item.get("modules", {}) or {})
                     dyn = (modules.get("module_dynamic", {}) or {})
-                    desc = (dyn.get("desc", {}) or {})
-                    text = (desc.get("text", "") or "").strip()
-                    # 转发动态：查原始内容
-                    if not text and item.get("type") == "DYNAMIC_TYPE_FORWARD":
-                        orig = item.get("orig", {}) or {}
-                        om = (orig.get("modules", {}) or {}).get("module_dynamic", {}) or {}
-                        od = (om.get("desc", {}) or {})
-                        text = (od.get("text", "") or "").strip()
-                    if text:
-                        event.video_title = text[:500]
-                        _dynamic_title_cache[dynamic_id] = event.video_title
 
-                    # 提取图片 URL（动态/图文动态）
+                    if is_opus:
+                        opus_cache_key = f"opus_{dynamic_id}"
+                        opus_info = cache.get(opus_cache_key, {})
+                        text = _extract_opus_text(opus_info) if opus_info else ""
+                        if text:
+                            event.video_title = text[:500]
+                            _dynamic_title_cache[dynamic_id] = event.video_title
+                    else:
+                        desc = (dyn.get("desc", {}) or {})
+                        text = (desc.get("text", "") or "").strip()
+                        if not text and item.get("type") == "DYNAMIC_TYPE_FORWARD":
+                            orig = item.get("orig", {}) or {}
+                            om = (orig.get("modules", {}) or {}).get("module_dynamic", {}) or {}
+                            od = (om.get("desc", {}) or {})
+                            text = (od.get("text", "") or "").strip()
+                        if text:
+                            event.video_title = text[:500]
+                            _dynamic_title_cache[dynamic_id] = event.video_title
+
+                    # 提取图片 URL（统一从 detail API 取，含转发动态）
                     major = dyn.get("major", {}) or {}
                     draw = major.get("draw", {}) or {}
                     draw_items = draw.get("items", []) or []
                     if draw_items:
                         event.images = [d.get("src", "") for d in draw_items if d.get("src")]
-                    # 转发动态也查原始图片
                     if not event.images and item.get("type") == "DYNAMIC_TYPE_FORWARD":
                         orig = item.get("orig", {}) or {}
                         om = (orig.get("modules", {}) or {}).get("module_dynamic", {}) or {}
@@ -187,8 +261,6 @@ class MsgFeedReplySource(BaseSource):
                         om_items = om_draw.get("items", []) or []
                         if om_items:
                             event.images = [d.get("src", "") for d in om_items if d.get("src")]
-
-        self._enrich_users(events, client)
 
         self._enrich_users(events, client)
 

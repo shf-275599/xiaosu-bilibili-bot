@@ -37,8 +37,9 @@ def build_comment_messages(event: CommentEvent, config) -> list[dict[str, str]]:
         label_map = {"dynamic": "动态内容", "dynamic_draw": "动态内容", "article": "文章标题"}
         label = label_map.get(event.business_type, "内容标题")
         parts.append(f"{label}：{event.video_title}")
+        if event.images and event.business_type in ("dynamic", "dynamic_draw"):
+            parts.append(f"动态图片：共 {len(event.images)} 张图片")
     elif event.images:
-        # 纯图动态（无文字），至少告知图片数量
         parts.append(f"动态内容：这是一条图文动态（包含 {len(event.images)} 张图片）")
     if event.bvid and event.business_type == "video":
         parts.append(f"视频BV号：{event.bvid}")
