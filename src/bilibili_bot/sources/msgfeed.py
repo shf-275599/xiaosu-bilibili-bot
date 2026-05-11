@@ -12,10 +12,18 @@ logger = structlog.get_logger()
 _dynamic_title_cache: dict[str, str] = {}
 
 
-def _extract_opus_id(uri: str) -> str:
-    """从 B站动态 URI 中提取 opus ID，如 'https://www.bilibili.com/opus/1197036032889978896' → '1197036032889978896'"""
+def _extract_dynamic_id(uri: str) -> str:
+    """从 B站动态 URI 中提取动态 ID。
+    opus格式: 'https://www.bilibili.com/opus/1197036032889978896' → '1197036032889978896'
+    t格式:    'https://t.bilibili.com/381040221372962034' → '381040221372962034'
+    """
     m = re.search(r"opus/(\d+)", uri)
-    return m.group(1) if m else ""
+    if m:
+        return m.group(1)
+    m = re.search(r"t\.bilibili\.com/(\d+)", uri)
+    if m:
+        return m.group(1)
+    return ""
 
 
 class MsgFeedReplySource(BaseSource):
@@ -121,43 +129,49 @@ class MsgFeedReplySource(BaseSource):
                 uri = (event.raw_payload.get("item", {}) or {}).get("uri", "")
                 if not uri:
                     uri = (event.raw_payload.get("uri", "") or "")
-                opus_id = _extract_opus_id(uri)
-                if not opus_id:
+                dynamic_id = _extract_dynamic_id(uri)
+                if not dynamic_id:
                     continue
 
-                # mention 源：将正确的动态标题写入缓存
-                if event.source_type == "mention" and event.video_title:
-                    _dynamic_title_cache[opus_id] = event.video_title
+                # mention 源：将标题写入缓存（拒绝转发动态的无效标题）
+                if event.source_type == "mention" and event.video_title and event.video_title not in ("转发动态", "分享动态"):
+                    _dynamic_title_cache[dynamic_id] = event.video_title
                     continue
 
                 # reply 源：先查缓存
-                if opus_id in _dynamic_title_cache:
-                    event.video_title = _dynamic_title_cache[opus_id]
+                if dynamic_id in _dynamic_title_cache:
+                    event.video_title = _dynamic_title_cache[dynamic_id]
                     continue
 
-                # 缓存没有，调动态详情 API
-                if opus_id not in cache:
+                # 缓存没有，调详情 API
+                if dynamic_id not in cache:
                     try:
                         resp = client.get(
                             "https://api.bilibili.com/x/polymer/web-dynamic/v1/detail",
-                            params={"id": opus_id, "timezone_offset": -480},
+                            params={"id": dynamic_id, "timezone_offset": -480},
                         )
                         data = resp.json()
                         if data.get("code") == 0:
-                            cache[opus_id] = data.get("data", {})
+                            cache[dynamic_id] = data.get("data", {})
                     except Exception as e:
-                        logger.debug("dynamic_enrich_failed", opus_id=opus_id, error=str(e))
+                        logger.debug("dynamic_enrich_failed", dynamic_id=dynamic_id, error=str(e))
 
-                info = cache.get(opus_id, {})
+                info = cache.get(dynamic_id, {})
                 if info:
                     item = (info.get("item", {}) or {})
                     modules = (item.get("modules", {}) or {})
                     dyn = (modules.get("module_dynamic", {}) or {})
                     desc = (dyn.get("desc", {}) or {})
                     text = (desc.get("text", "") or "").strip()
+                    # 转发动态：查原始内容
+                    if not text and item.get("type") == "DYNAMIC_TYPE_FORWARD":
+                        orig = item.get("orig", {}) or {}
+                        om = (orig.get("modules", {}) or {}).get("module_dynamic", {}) or {}
+                        od = (om.get("desc", {}) or {})
+                        text = (od.get("text", "") or "").strip()
                     if text:
                         event.video_title = text[:500]
-                        _dynamic_title_cache[opus_id] = event.video_title
+                        _dynamic_title_cache[dynamic_id] = event.video_title
 
         self._enrich_users(events, client)
 
