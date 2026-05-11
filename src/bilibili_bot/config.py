@@ -12,14 +12,14 @@ from pydantic_settings import BaseSettings
 
 class BotSettings(BaseModel):
     enabled: bool = True
-    poll_interval_seconds: int = 30
+    poll_interval_seconds: int = 5
     run_mode: str = "daemon"
     log_level: str = "INFO"
     request_timeout_seconds: int = 25
     source_failure_cooldown_seconds: int = 180
     report_enabled: bool = False
     report_owner_uid: str = ""
-    report_hour: int = 22
+    report_hour: int = 0
 
 
 class MsgFeedConfig(BaseModel):

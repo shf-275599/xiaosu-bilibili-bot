@@ -2,5 +2,5 @@ requests>=2.28.0
 cryptography>=41.0.0
 pydantic>=2.0.0
 pydantic-settings>=2.0.0
+pydantic-ai[openai]>=1.93.0
 structlog>=23.0.0
-smolagents[litellm]>=1.0.0

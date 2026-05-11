@@ -4,7 +4,7 @@ from bilibili_bot.config import BotConfig
 
 def test_default_config():
     config = BotConfig()
-    assert config.bot.poll_interval_seconds == 30
+    assert config.bot.poll_interval_seconds == 5
     assert config.ai.primary_provider == "deepseek"
     assert config.rate_limit.max_hourly_replies == 20
 

@@ -44,8 +44,6 @@ def _tavily_search(query: str, num: int, api_key: str) -> str:
         if resp.status_code != 200:
             return ""
 
-        _increment_quota()
-
         results = data.get("results", [])
         if not results:
             return ""
