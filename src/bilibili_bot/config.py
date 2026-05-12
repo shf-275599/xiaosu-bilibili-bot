@@ -89,6 +89,8 @@ class AIConfig(BaseModel):
     tools_enabled: bool = True
     tool_max_iterations: int = 3
     search_quota_daily: int = 30
+    session_ttl_seconds: int = 3600
+    history_max_messages: int = 50
 
 
 class ReplyConfig(BaseModel):

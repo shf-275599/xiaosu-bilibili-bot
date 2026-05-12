@@ -1,6 +1,6 @@
 """AI Provider 管理 — PydanticAI Agent 会话级对话管理。
 
-v3.1: deps注入 + Usage追踪 + ModelSettings + run_stream
+v4: 裁剪LLM摘要 + 摘要持久化 + 可配TTL/上限
 """
 
 from __future__ import annotations
@@ -21,17 +21,16 @@ from bilibili_bot.tools import TOOLS
 
 if TYPE_CHECKING:
     from pydantic_ai.messages import ModelMessage
+    from bilibili_bot.atomic_state import AtomicStateStore
 
 logger = structlog.get_logger()
 
-SESSION_TTL = 3600
 MAX_SESSIONS = 500
-HISTORY_MAX = 50
+SUMMARY_MAX_TOKENS = 500
 
 
 @dataclass
 class BotDeps:
-    """工具依赖注入。"""
     config: Any = None
 
 
@@ -47,18 +46,25 @@ class ReplyResult:
 
 
 class ProviderManager:
-    def __init__(self, config):
+    def __init__(self, config, atomic_store: Any = None):
         self._config = config
+        self._store = atomic_store
         self._sessions: dict[str, _AgentSession] = {}
-        self._summaries: dict[str, str] = {}
         self._deps = BotDeps(config=config)
+
+    @property
+    def _ttl(self) -> int:
+        return getattr(self._config.ai, "session_ttl_seconds", 3600)
+
+    @property
+    def _history_max(self) -> int:
+        return getattr(self._config.ai, "history_max_messages", 50)
 
     def chat(self, session_key: str, system_prompt: str,
              user_message: str, stream: bool = False) -> ReplyResult:
         session = self._get_or_create_session(session_key, system_prompt)
         session.touch()
 
-        # 恢复摘要上下文
         if session.summary and not session.history:
             user_message = f"[之前的对话摘要] {session.summary}\n\n{user_message}"
             session.summary = ""
@@ -66,6 +72,7 @@ class ProviderManager:
         try:
             if stream:
                 return self._chat_stream(session, user_message)
+
             result = session.agent.run_sync(
                 user_prompt=user_message,
                 message_history=session.history,
@@ -76,7 +83,7 @@ class ProviderManager:
                 ),
             )
             session.history = result.all_messages()
-            self._trim_history(session)
+            self._trim_history(session, session_key)
             return _result_to_reply(result)
         except Exception as e:
             logger.warning("agent_chat_failed", error=str(e), session=session_key)
@@ -108,6 +115,7 @@ class ProviderManager:
         self._prune()
         if key in self._sessions:
             return self._sessions[key]
+
         cfg = self._config.ai.providers[self._config.ai.primary_provider]
         api_key = os.environ.get(cfg.api_key_env or "", "")
         p = OpenAIProvider(base_url=(cfg.base_url or "").rstrip("/"), api_key=api_key)
@@ -115,13 +123,14 @@ class ProviderManager:
         agent = Agent(model, system_prompt=system_prompt, tools=TOOLS, deps_type=BotDeps)
         session = _AgentSession(agent=agent, created_at=time.time())
 
-        # 从摘要恢复上下文
-        if key in self._summaries:
-            session.summary = self._summaries.pop(key)
+        # 从持久化存储恢复摘要
+        saved = self._load_summary(key)
+        if saved:
+            session.summary = saved
 
         if len(self._sessions) >= MAX_SESSIONS:
             oldest = min(self._sessions, key=lambda k: self._sessions[k].last_used)
-            self._save_summary(oldest)
+            self._prune_one(oldest)
             del self._sessions[oldest]
         self._sessions[key] = session
         return session
@@ -129,40 +138,86 @@ class ProviderManager:
     def _prune(self) -> None:
         now = time.time()
         for k in list(self._sessions):
-            if now - self._sessions[k].last_used > SESSION_TTL:
-                self._save_summary(k)
+            if now - self._sessions[k].last_used > self._ttl:
+                self._prune_one(k)
                 del self._sessions[k]
 
-    def _save_summary(self, key: str) -> None:
-        """过期前 LLM 摘要，重建时恢复上下文。"""
+    def _prune_one(self, key: str) -> None:
+        """删除session前生成摘要并持久化。"""
         session = self._sessions.get(key)
         if not session or len(session.history) < 4:
             return
+        summary = self._summarize(session.history)
+        if summary:
+            self._save_summary(key, summary)
+
+    def _trim_history(self, session: _AgentSession, key: str) -> None:
+        """裁剪前生成摘要（裁剪后摘要+最近消息保留）。"""
+        if len(session.history) <= self._history_max:
+            return
+
+        keep = max(20, self._history_max * 3 // 5)
+        old_msgs = session.history[1:-keep]
+        if len(old_msgs) <= 2:
+            return
+
+        summary = self._summarize(old_msgs)
+        if not summary:
+            session.history = [session.history[0]] + session.history[-keep:]
+            return
+
+        self._save_summary(key, summary)
+        hint = f"[对话历史摘要] {summary}"
+        from pydantic_ai.messages import ModelRequest, SystemPromptPart
+        summary_msg = ModelRequest(parts=[SystemPromptPart(content=hint)])
+        session.history = [session.history[0], summary_msg] + session.history[-keep:]
+
+    def _summarize(self, messages: list) -> str:
+        """调用 LLM 生成详细摘要。"""
+        lines = []
+        for msg in messages:
+            for part in msg.parts:
+                content = getattr(part, 'content', '') or ''
+                if content and len(content) > 5:
+                    role = "bot" if hasattr(msg, 'parts') and any(
+                        'ThinkingPart' in type(p).__name__ or 'TextPart' in type(p).__name__
+                        for p in msg.parts) else "user"
+                    lines.append(f"{role}: {content[:200]}")
+                    break
+        text = "\n".join(lines[-30:])
+        if not text.strip():
+            return ""
+
+        result = _chat_simple(
+            self._config,
+            "详细总结以下对话，列出每个被讨论过的话题和关键信息，尽可能还原上下文，方便后续继续对话：",
+            text,
+        )
+        if result.success and result.text:
+            return result.text[:500]
+        return ""
+
+    def _save_summary(self, key: str, summary: str) -> None:
+        """持久化摘要到 AtomicStateStore。"""
+        if not self._store:
+            return
         try:
-            lines = []
-            for msg in session.history[1:]:
-                for part in msg.parts:
-                    content = getattr(part, 'content', '') or ''
-                    if content and len(content) > 5:
-                        lines.append(content[:150])
-                        break
-            text = "\n".join(lines[-20:])
-            if not text.strip():
-                return
-            result = _chat_simple(
-                self._config,
-                "用2-3句中文总结这段对话的核心话题和用户需求",
-                text,
+            self._store.atomic_getset(
+                "session_summaries", key, value=summary,
             )
-            if result.success and result.text:
-                self._summaries[key] = result.text[:300]
         except Exception:
             pass
 
-    def _trim_history(self, session: _AgentSession) -> None:
-        if len(session.history) <= HISTORY_MAX:
-            return
-        session.history = [session.history[0]] + session.history[-30:]
+    def _load_summary(self, key: str) -> str:
+        """从持久化存储读取摘要。"""
+        if not self._store:
+            return ""
+        try:
+            state = self._store.load_state()
+            summaries = state.get("session_summaries", {})
+            return summaries.pop(key, "") if isinstance(summaries, dict) else ""
+        except Exception:
+            return ""
 
 
 class _AgentSession:
@@ -209,7 +264,7 @@ def _chat_simple(config, system_prompt: str, user_message: str) -> ReplyResult:
     try:
         result = agent.run_sync(
             user_message,
-            model_settings=ModelSettings(temperature=config.reply.temperature, max_tokens=200),
+            model_settings=ModelSettings(temperature=config.reply.temperature, max_tokens=SUMMARY_MAX_TOKENS),
         )
         return ReplyResult(True, text=str(result.output), provider="deepseek")
     except Exception as e:

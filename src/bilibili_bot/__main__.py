@@ -130,7 +130,7 @@ def run_once(config: BotConfig, dry_run: bool = False,
     dedup = DedupService(atomic_store)
     rate_limiter = RateController(config, atomic_store)
     if providers is None:
-        providers = ProviderManager(config)
+        providers = ProviderManager(config, atomic_store)
     cookie_manager = CookieRefreshManager(config, cookie_store, atomic_store)
     auto_skip_tracker = AutoSkipTracker(atomic_store)
 
@@ -275,7 +275,7 @@ def main() -> int:
         return 0
 
     cookie_store = CookieStore(config.cookie.cookies_file)
-    providers = ProviderManager(config)  # 只创建一次，保持会话
+    providers = ProviderManager(config, None)  # 只创建一次，保持会话
     shutdown_event = threading.Event()
 
     def handle_signal(signum, frame):
