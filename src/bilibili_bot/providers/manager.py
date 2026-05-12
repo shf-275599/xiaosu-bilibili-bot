@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 import structlog
 from pydantic_ai import Agent
 
-from bilibili_bot.providers.agent_factory import create_agent
+
 
 if TYPE_CHECKING:
     from pydantic_ai.messages import ModelMessage
@@ -69,7 +69,7 @@ class ProviderManager:
         if key in self._sessions:
             return self._sessions[key]
 
-        agent = create_agent(system_prompt, self._config, self._config.ai.primary_provider)
+        agent = _create_agent(system_prompt, self._config, self._config.ai.primary_provider)
         session = _AgentSession(agent=agent, created_at=time.time())
         if len(self._sessions) >= MAX_SESSIONS:
             oldest = min(self._sessions, key=lambda k: self._sessions[k].last_used)
@@ -117,3 +117,17 @@ def _result_to_reply(result) -> ReplyResult:
         provider="deepseek",
         tool_calls=tool_calls,
     )
+
+# ── Agent 工厂 ──
+
+import os
+from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.providers.openai import OpenAIProvider
+from bilibili_bot.tools import TOOLS
+
+def _create_agent(system_prompt: str, config) -> Agent:
+    provider_cfg = config.ai.providers.get(config.ai.primary_provider)
+    api_key = os.environ.get(provider_cfg.api_key_env or "", "")
+    p = OpenAIProvider(base_url=(provider_cfg.base_url or "").rstrip("/"), api_key=api_key)
+    model = OpenAIChatModel(provider_cfg.model or "", provider=p)
+    return Agent(model, system_prompt=system_prompt, tools=TOOLS)

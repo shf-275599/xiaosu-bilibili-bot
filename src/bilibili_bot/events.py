@@ -54,15 +54,10 @@ class CommentEvent(Event):
     author_follower: bool = False
     
     author_level: int = 0
-    author_fans_count: int = 0
-    
+
     video_view_count: int = 0
     video_like_count: int = 0
-    video_favorite_count: int = 0
     up_name: str = ""
-    
-    hot_comments: list = field(default_factory=list)
-    comment_area_sentiment: str = ""  # positive/negative/neutral
     
     images: list[str] = field(default_factory=list)  # 动态/图文事件的图片 URL
 
@@ -97,13 +92,9 @@ class CommentEvent(Event):
             "thread_context": self.thread_context,
             "author_follower": self.author_follower,
             "author_level": self.author_level,
-            "author_fans_count": self.author_fans_count,
             "video_view_count": self.video_view_count,
             "video_like_count": self.video_like_count,
-            "video_favorite_count": self.video_favorite_count,
             "up_name": self.up_name,
-            "hot_comments_count": len(self.hot_comments),
-            "comment_area_sentiment": self.comment_area_sentiment,
         })
         return data
 

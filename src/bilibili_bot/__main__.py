@@ -28,7 +28,7 @@ from bilibili_bot.pipeline.safety import SafetyCheckStage
 from bilibili_bot.pipeline.send import SendStage
 from bilibili_bot.providers.manager import ProviderManager
 from bilibili_bot.sources.dm import DMSource
-from bilibili_bot.sources.mention import MentionMsgFeedSource
+from bilibili_bot.sources.msgfeed import MentionMsgFeedSource
 from bilibili_bot.sources.msgfeed import MsgFeedReplySource
 from bilibili_bot.sources.own_dynamic import OwnDynamicCommentSource
 from bilibili_bot.sources.own_video import OwnVideoCommentSource
