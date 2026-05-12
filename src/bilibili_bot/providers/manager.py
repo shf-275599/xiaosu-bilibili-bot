@@ -69,7 +69,7 @@ class ProviderManager:
         if key in self._sessions:
             return self._sessions[key]
 
-        agent = _create_agent(system_prompt, self._config, self._config.ai.primary_provider)
+        agent = _create_agent(system_prompt, self._config)
         session = _AgentSession(agent=agent, created_at=time.time())
         if len(self._sessions) >= MAX_SESSIONS:
             oldest = min(self._sessions, key=lambda k: self._sessions[k].last_used)
