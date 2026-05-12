@@ -9,7 +9,7 @@ import structlog
 
 from bilibili_bot.events import Event
 from bilibili_bot.pipeline.base import PipelineStage, PipelineContext, StageResult
-from bilibili_bot.state import StateStore
+from bilibili_bot.atomic_state import AtomicStateStore
 
 logger = structlog.get_logger()
 
@@ -46,7 +46,7 @@ class DedupRecord:
 
 
 class DedupService:
-    def __init__(self, store: StateStore, max_size: int = 50000, ttl_days: int = 7):
+    def __init__(self, store: AtomicStateStore, max_size: int = 50000, ttl_days: int = 7):
         self._store = store
         self._seen: dict[str, DedupRecord] = {}
         self._max_size = max_size

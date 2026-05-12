@@ -55,7 +55,6 @@ class CommentEvent(Event):
     
     author_level: int = 0
     author_fans_count: int = 0
-    interaction_count: int = 0
     
     video_view_count: int = 0
     video_like_count: int = 0
@@ -66,9 +65,6 @@ class CommentEvent(Event):
     comment_area_sentiment: str = ""  # positive/negative/neutral
     
     images: list[str] = field(default_factory=list)  # 动态/图文事件的图片 URL
-    
-    recent_replies: list = field(default_factory=list)
-    conversation_summary: str = ""
 
     @property
     def author_id(self) -> str:
@@ -102,15 +98,12 @@ class CommentEvent(Event):
             "author_follower": self.author_follower,
             "author_level": self.author_level,
             "author_fans_count": self.author_fans_count,
-            "interaction_count": self.interaction_count,
             "video_view_count": self.video_view_count,
             "video_like_count": self.video_like_count,
             "video_favorite_count": self.video_favorite_count,
             "up_name": self.up_name,
             "hot_comments_count": len(self.hot_comments),
             "comment_area_sentiment": self.comment_area_sentiment,
-            "recent_replies_count": len(self.recent_replies),
-            "conversation_summary": self.conversation_summary,
         })
         return data
 

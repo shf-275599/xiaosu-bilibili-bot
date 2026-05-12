@@ -265,59 +265,6 @@ class AtomicStateStore:
         """获取事件处理记录。"""
         return self._processed_index.get(event_key)
 
-    # ── 评论连续对话 ──
-
-    def get_comment_context(self, video_id: str, user_id: str) -> dict[str, Any]:
-        """获取评论对话上下文。"""
-        with self._lock:
-            state = self.load_state()
-            contexts = state.get("comment_contexts", {})
-            key = f"{video_id}:{user_id}"
-            return contexts.get(key, {})
-
-    def update_comment_context(
-        self,
-        video_id: str,
-        user_id: str,
-        user_name: str,
-        role: str,
-        content: str,
-    ) -> None:
-        """更新评论对话上下文。"""
-        with self._lock:
-            state = self.load_state()
-            if "comment_contexts" not in state:
-                state["comment_contexts"] = {}
-
-            key = f"{video_id}:{user_id}"
-            context = state["comment_contexts"].get(key, {
-                "video_id": video_id,
-                "user_id": user_id,
-                "user_name": user_name,
-                "recent_replies": [],
-                "conversation_summary": "",
-                "last_active_at": 0,
-            })
-
-            context["recent_replies"].append({
-                "role": role,
-                "content": content[:200],
-                "timestamp": int(time.time()),
-            })
-
-            if len(context["recent_replies"]) > 30:
-                oldest_15 = context["recent_replies"][:15]
-                lines = []
-                for item in oldest_15:
-                    role_label = "我" if item["role"] == "bot" else "对方"
-                    lines.append(f"{role_label}: {item['content']}")
-                context["conversation_summary"] = "\n".join(lines)
-                context["recent_replies"] = context["recent_replies"][-15:]
-
-            context["last_active_at"] = int(time.time())
-            state["comment_contexts"][key] = context
-            self.save_state(state)
-
     # ── 回复历史 ──
 
     def append_processed(self, record: dict[str, Any]) -> None:

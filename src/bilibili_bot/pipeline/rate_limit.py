@@ -8,13 +8,13 @@ import structlog
 
 from bilibili_bot.events import Event
 from bilibili_bot.pipeline.base import PipelineStage, PipelineContext, StageResult
-from bilibili_bot.state import StateStore
+from bilibili_bot.atomic_state import AtomicStateStore
 
 logger = structlog.get_logger()
 
 
 class RateController:
-    def __init__(self, config, store: StateStore | None = None):
+    def __init__(self, config, store: AtomicStateStore | None = None):
         self.config = config
         self.store = store
         cfg = config.rate_limit

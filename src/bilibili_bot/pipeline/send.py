@@ -128,22 +128,6 @@ class SendStage(PipelineStage):
             context.dedup.mark_replied(event, context.reply_text, f"{context.provider_used}:dry-run", context.tool_calls)
             context.rate_limiter.record_success(user_id=event.author_id, oid=event.target_id)
 
-            if isinstance(event, CommentEvent) and context.store:
-                context.store.update_comment_context(
-                    video_id=event.oid,
-                    user_id=event.author_mid,
-                    user_name=event.author_name,
-                    role="user",
-                    content=event.content_text,
-                )
-                context.store.update_comment_context(
-                    video_id=event.oid,
-                    user_id=event.author_mid,
-                    user_name=event.author_name,
-                    role="bot",
-                    content=context.reply_text,
-                )
-
             return StageResult.CONTINUE
 
         if isinstance(event, CommentEvent):
@@ -160,20 +144,7 @@ class SendStage(PipelineStage):
             context.rate_limiter.record_success(user_id=event.author_id, oid=event.target_id)
 
             if isinstance(event, CommentEvent) and context.store:
-                context.store.update_comment_context(
-                    video_id=event.oid,
-                    user_id=event.author_mid,
-                    user_name=event.author_name,
-                    role="user",
-                    content=event.content_text,
-                )
-                context.store.update_comment_context(
-                    video_id=event.oid,
-                    user_id=event.author_mid,
-                    user_name=event.author_name,
-                    role="bot",
-                    content=context.reply_text,
-                )
+                pass  # v3: Agent 管理对话历史，不再持久化到 bot-state.json
         else:
             logger.error("send_failed", event_key=event.event_key, error=message)
             context.dedup.mark_failed(event, message, context.provider_used)

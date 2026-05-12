@@ -201,30 +201,6 @@ def test_retry_becomes_new_after_cooldown(store, monkeypatch):
     assert status != DedupStatus.REPLIED
 
 
-# ── comment_context ──
-
-def test_get_comment_context_empty(store):
-    assert store.get_comment_context("vid1", "uid1") == {}
-
-
-def test_update_and_get_comment_context(store):
-    store.update_comment_context("vid1", "uid1", "user", "user", "hello")
-    ctx = store.get_comment_context("vid1", "uid1")
-    assert ctx["user_name"] == "user"
-    assert len(ctx["recent_replies"]) == 1
-    assert ctx["recent_replies"][0]["content"] == "hello"
-
-
-def test_comment_context_overflow_summary(store):
-    for i in range(35):
-        role = "user" if i % 2 == 0 else "bot"
-        store.update_comment_context("vid1", "uid1", "u", role, f"msg{i}")
-    ctx = store.get_comment_context("vid1", "uid1")
-    assert len(ctx["recent_replies"]) > 0
-    assert ctx["conversation_summary"] != ""
-    assert len(ctx["recent_replies"]) < 35
-
-
 # ── compact ──
 
 def test_compact_processed(store):

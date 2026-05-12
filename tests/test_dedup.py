@@ -1,12 +1,12 @@
 import pytest
-from bilibili_bot.state import StateStore
+from bilibili_bot.atomic_state import AtomicStateStore
 from bilibili_bot.pipeline.dedup import DedupService, DedupStatus
 from bilibili_bot.events import CommentEvent
 
 
 @pytest.fixture
 def dedup(tmp_path):
-    store = StateStore(tmp_path)
+    store = AtomicStateStore(tmp_path)
     return DedupService(store)
 
 

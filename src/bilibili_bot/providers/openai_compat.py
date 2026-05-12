@@ -7,8 +7,6 @@ import structlog
 from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
-from pydantic_ai.settings import ModelSettings
-from pydantic_ai.usage import UsageLimits
 
 from bilibili_bot.providers.base import BaseProvider, ReplyResult
 from bilibili_bot.tools import TOOLS

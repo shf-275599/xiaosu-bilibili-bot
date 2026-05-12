@@ -4,7 +4,7 @@ import time
 
 import structlog
 
-from bilibili_bot.state import StateStore
+from bilibili_bot.atomic_state import AtomicStateStore
 
 logger = structlog.get_logger()
 
@@ -13,7 +13,7 @@ _SKIP_THRESHOLD = 3
 
 
 class AutoSkipTracker:
-    def __init__(self, store: StateStore) -> None:
+    def __init__(self, store: AtomicStateStore) -> None:
         self._store = store
         state = store.load_state()
         auto_skip_data = state.get("auto_skip", {})

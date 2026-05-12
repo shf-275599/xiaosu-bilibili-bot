@@ -56,18 +56,3 @@ class RateProtocol(Protocol):
     def record_source_success(self, name: str) -> None: ...
 
     def record_source_failure(self, name: str) -> float: ...
-
-
-class StoreProtocol(Protocol):
-    """状态存储接口。"""
-
-    def get_comment_context(self, video_id: str, user_id: str) -> dict[str, Any]: ...
-
-    def update_comment_context(
-        self,
-        video_id: str,
-        user_id: str,
-        user_name: str,
-        role: str,
-        content: str,
-    ) -> None: ...
