@@ -365,7 +365,7 @@ GenerateStage → ProviderManager.chat(session_key, user_message)
 Agent（按会话缓存）
     ├─ session_key = "msgfeed:{oid}:{mid}"  → 取已有 Agent + 历史
     ├─ agent.run_sync(user_prompt, message_history=session.history)
-    ├─ 历史自动裁剪（>40条 → 保留31条）
+    ├─ 历史裁剪（>40条 → LLM摘要 + 保留20条）
     └─ result.output → ReplyResult(text=..., tool_calls=[...])
         │
         ├─ 成功 → 返回回复
@@ -387,7 +387,7 @@ def search_web(query: str) -> str: ...
 **PydanticAI Agent 原生集成**（v3）：
 - `ProviderManager.chat(session_key, user_message)` 按会话管理 Agent 实例
 - DM 会话 key=`dm:{talker_id}`，评论 key=`{source}:{oid}:{mid}`
-- Agent 内部维护完整对话历史，自动裁剪 >40 条防止 token 溢出
+- Agent 内部维护完整对话历史，超限自动 LLM 摘要压缩
 - 会话 TTL=1h，超期自动回收
 
 ### 事件模型
@@ -410,21 +410,7 @@ class CommentEvent(Event):
     # 用户画像扩展
     author_level: int = 0   # 用户等级 (0-6)
     author_fans_count: int = 0  # 粉丝数
-    interaction_count: int = 0  # 历史互动次数
-    
-    # 视频热度扩展
-    video_view_count: int = 0   # 播放量
-    video_like_count: int = 0   # 点赞数
-    video_coin_count: int = 0   # 投币数
-    video_favorite_count: int = 0  # 收藏数
-    video_share_count: int = 0  # 分享数
-    video_reply_count: int = 0  # 评论数
-    up_name: str = ""       # UP主名称
-    up_fans_count: int = 0  # UP主粉丝数
-    
-    # 连续对话扩展
-    recent_replies: list = field(default_factory=list)  # 历史回复
-    conversation_summary: str = ""  # 对话摘要
+    # v3: Agent 内部管理对话上下文，不再存储于事件模型中
 
 @dataclass
 class DMEvent(Event):
@@ -522,7 +508,7 @@ Token 估算: ~19.0k
 
 ### 多轮对话记忆
 
-私信中对话超过 30 条时，Bot 自动调用 LLM 将最老的对话总结为一句话摘要，注入到当前对话的上下文中。短对话不触发，不增加额外 API 调用。
+私信和评论的多轮对话由 PydanticAI Agent 在内存中管理，按会话自动关联上下文。历史消息超过 40 条时自动调用 LLM 压缩为摘要，避免 token 溢出。
 
 ### 回复质量反馈
 
