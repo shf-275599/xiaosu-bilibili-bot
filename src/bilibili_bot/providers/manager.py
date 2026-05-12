@@ -2,6 +2,7 @@
 
 每个会话（DM: talker_id，评论: video_id:user_id）维护独立的 Agent 实例，
 Agent 内部自动管理对话历史，支持多轮上下文。
+历史超限时自动 LLM 摘要压缩。
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ from typing import TYPE_CHECKING
 
 import structlog
 from pydantic_ai import Agent
+from pydantic_ai.messages import ModelRequest, SystemPromptPart
 
 from bilibili_bot.providers.base import BaseProvider, ReplyResult
 from bilibili_bot.providers.openai_compat import (
@@ -54,12 +56,6 @@ class ProviderManager:
         user_message: str,
         use_tools: bool = True,
     ) -> ReplyResult:
-        """以会话方式生成回复。Agent 内部维护历史。
-
-        session_key: 会话标识（DM用 talker_id, 评论用 video_id:user_id）
-        system_prompt: 角色设定
-        user_message: 当前用户消息（含上下文）
-        """
         session = self._get_or_create_session(session_key, system_prompt, use_tools)
         session.touch()
 
@@ -69,7 +65,7 @@ class ProviderManager:
                 message_history=session.history,
             )
             session.history = result.all_messages()
-            _trim_history(session)
+            self._trim_history(session)
             return _agent_result_to_reply(result, self.primary_name)
         except Exception as e:
             logger.warning("agent_chat_failed", error=str(e), session=session_key)
@@ -110,6 +106,57 @@ class ProviderManager:
         for k in expired:
             del self._sessions[k]
 
+    def _trim_history(self, session: _AgentSession) -> None:
+        """历史超限时用 LLM 摘要压缩旧消息。"""
+        if len(session.history) <= HISTORY_MAX:
+            return
+
+        keep = 20
+        old_msgs = session.history[1:-keep]  # 跳过 system_prompt，保留最近 keep 条
+        if len(old_msgs) <= 1:
+            return
+
+        summary = self._summarize_messages(old_msgs)
+        if not summary:
+            session.history = [session.history[0]] + session.history[-keep:]
+            return
+
+        summary_msg = ModelRequest(parts=[
+            SystemPromptPart(content=f"[对话历史摘要] {summary}")
+        ])
+        session.history = [session.history[0], summary_msg] + session.history[-keep:]
+
+    def _summarize_messages(self, messages: list) -> str:
+        """调用 LLM 生成对话摘要。"""
+        lines = []
+        for msg in messages:
+            try:
+                role = "我" if hasattr(msg, 'parts') and any(
+                    'ToolCall' in type(p).__name__ for p in msg.parts
+                ) else "对方" if any(
+                    'UserPrompt' in type(p).__name__ for p in msg.parts
+                ) else ""
+                content = str(msg)
+                if role:
+                    lines.append(f"{role}: {content[:200]}")
+            except Exception:
+                lines.append(str(msg)[:200])
+
+        text = "\n".join(lines[-30:])
+        if not text.strip():
+            return ""
+
+        try:
+            result = self.primary.generate([
+                {"role": "system", "content": "用一句中文总结以下对话的核心话题和关键信息："},
+                {"role": "user", "content": text},
+            ])
+            if result.success and result.text:
+                return result.text[:200]
+        except Exception as e:
+            logger.debug("history_summary_failed", error=str(e))
+        return ""
+
     def generate_reply(self, messages: list[dict[str, str]]) -> ReplyResult:
         """降级路径：纯 HTTP 调用（无工具，无会话）。"""
         return self.primary.generate(messages)
@@ -124,12 +171,3 @@ class _AgentSession:
 
     def touch(self) -> None:
         self.last_used = time.time()
-
-
-def _trim_history(session: _AgentSession) -> None:
-    """裁剪历史到最近 HISTORY_MAX 条，避免 token 无限增长。"""
-    if len(session.history) <= HISTORY_MAX:
-        return
-    # 保留第一条（system prompt）和最近 30 条
-    keep = min(HISTORY_MAX - 1, 30)
-    session.history = [session.history[0]] + session.history[-keep:]
