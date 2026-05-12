@@ -296,6 +296,7 @@ bilibili-bot/
 │   ├── atomic_state.py       # [v3] 原子状态存储（双重锁，消除竞态）
 │   ├── cookie_store.py       # [v3] Cookie 存储（mtime 自动重载）
 │   ├── protocols.py          # [v3] 类型化服务接口
+│   ├── protocols.py          # [v3] 类型化服务接口
 │   ├── cookie.py             # Cookie 刷新管理（RSA-OAEP + refresh_csrf + token 持久化）
 │   ├── wbi.py                # [v3] 统一 WBI 签名算法
 │   ├── log.py                # 结构化日志配置（structlog）
@@ -312,7 +313,6 @@ bilibili-bot/
 │   │   └── send.py           # 发送（WBI 签名修复 + DM 错误分类 + dev_id 随机化）
 │   ├── providers/            # AI Provider
 │   │   ├── base.py           # Provider ABC + ReplyResult
-│   │   ├── openai_compat.py  # OpenAI 兼容 Provider（generate + PydanticAI Agent）
 │   │   └── manager.py        # [v3] Provider 管理（会话级 Agent 缓存 + 历史裁剪）
 │   ├── tools/                # PydanticAI Tool 工具系统
 │   │   ├── __init__.py       # Tool 定义 + 实现（线程安全锁）
@@ -320,8 +320,7 @@ bilibili-bot/
 │   │   └── web_search.py     # 联网搜索（Tavily + DuckDuckGo 降级）
 │   └── sources/              # 数据来源
 │       ├── base.py           # Source ABC
-│       ├── msgfeed.py        # 消息通知回复 + bvid + 用户画像 + parent_rpid 修复
-│       ├── mention.py        # @我消息（复用 msgfeed enrich 逻辑）
+│       ├── msgfeed.py        # 消息通知回复 + @我消息 + bvid + 用户画像
 │       ├── own_video.py      # 自己视频评论（WBI 签名 + 重试）
 │       ├── own_dynamic.py    # 自己动态评论（WBI 签名）
 │       └── dm.py             # 私信（会话列表 + 历史消息 + 分享解析）
