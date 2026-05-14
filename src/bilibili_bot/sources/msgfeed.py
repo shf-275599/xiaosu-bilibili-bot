@@ -283,12 +283,15 @@ class MsgFeedReplySource(BaseSource):
                 data = resp.json()
                 if data.get("code") == 0:
                     info = data.get("data", {})
-                    is_followed = info.get("relation", {}).get("is_followed", 0)
+                    relation = info.get("relation", {})
+                    # is_followed = bot关注了用户
+                    # attribute=2(被关注)或6(互关) → 用户关注了bot
+                    attr = relation.get("attribute", 0)
                     level = info.get("level", 0)
                     fans_count = info.get("follower", 0)
                     for e in events:
                         if e.author_mid == mid:
-                            if is_followed:
+                            if attr in (2, 6):
                                 e.author_follower = True
                             e.author_level = level
                             e.author_fans_count = fans_count
