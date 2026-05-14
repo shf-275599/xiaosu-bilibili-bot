@@ -286,10 +286,6 @@ class MsgFeedReplySource(BaseSource):
                 e.author_follower = True
             else:
                 e.author_follower = False
-                # 失败不阻塞
-                for ev in events:
-                    if ev.author_mid == mid:
-                        ev.author_follower = True
 
     def _normalize_item(self, item: dict) -> CommentEvent | None:
         user = item.get("user", {})
