@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 logger = structlog.get_logger()
 
 MAX_SESSIONS = 500
-SUMMARY_MAX_TOKENS = 500
+SUMMARY_MAX_TOKENS = 800
 
 
 @dataclass
@@ -190,11 +190,11 @@ class ProviderManager:
 
         result = _chat_simple(
             self._config,
-            "详细总结以下对话，列出每个被讨论过的话题和关键信息，尽可能还原上下文，方便后续继续对话：",
+            "详细总结以下对话的核心内容。列出每个话题、用户需求、关键信息和你给出的回复方向，尽可能完整还原上下文：",
             text,
         )
         if result.success and result.text:
-            return result.text[:500]
+            return result.text[:800]
         return ""
 
     def _save_summary(self, key: str, summary: str) -> None:

@@ -51,7 +51,7 @@ max_reply_chars = 100
 tools_enabled = true           # 启用 LLM Function Calling（视频摘要/转录/联网搜索）
 tool_max_iterations = 6       # 工具调用最大迭代次数（request_limit=6）
 search_quota_daily = 30    # 每日搜索次数上限
-session_ttl_seconds = 3600  # 会话过期时间（1小时无活动则过期）
+session_ttl_seconds = 86400  # 会话过期时间（24小时无活动则过期）
 history_max_messages = 50   # 会话历史最大消息数（超过则LLM摘要裁剪）
 
 [ai.providers.deepseek]
