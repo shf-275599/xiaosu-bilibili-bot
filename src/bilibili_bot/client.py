@@ -77,3 +77,28 @@ class BilibiliSession(requests.Session):
 
     def get_cookies(self) -> dict[str, str]:
         return self._cookie_store.get_all()
+
+    def post_dynamic(self, content: str) -> tuple[bool, str]:
+        """发布纯文字动态。"""
+        csrf = self.get_cookie("bili_jct", "")
+        if not csrf:
+            return False, "缺少 bili_jct"
+        try:
+            resp = self.post(
+                "https://api.vc.bilibili.com/dynamic_svr/v1/dynamic_svr/create",
+                data={
+                    "dynamic_id": 0,
+                    "type": 4,
+                    "rid": 0,
+                    "content": content,
+                    "csrf": csrf,
+                    "csrf_token": csrf,
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            if data.get("code") == 0:
+                return True, "发送成功"
+            return False, f"发送失败 code={data.get('code')} msg={data.get('message')}"
+        except Exception as e:
+            return False, f"请求异常: {e}"
